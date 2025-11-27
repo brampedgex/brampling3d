@@ -6,9 +6,13 @@
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_hints.h>
 
+#include <spdlog/spdlog.h>
+
 using namespace std::chrono_literals;
 
 int main(int argc, char** argv) {
+    spdlog::info("hello, spdlog");
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::println(std::cerr, "Failed to initialize SDL!");
         return 1;
