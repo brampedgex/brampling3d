@@ -27,7 +27,7 @@ static void sdl3_perror(fmt::format_string<Args...> fmt, Args&&... args) {
     spdlog::error("{}: {}", str, SDL_GetError());
 }
 
-static bool init_sdl3() {
+static bool sdl3_init() {
     SDL_SetLogOutputFunction([](void*, int category, SDL_LogPriority priority, const char* message) {
         spdlog::level::level_enum level;
 
@@ -104,7 +104,7 @@ constexpr auto VERTICES = std::to_array<Vertex>({
 });
 
 int main(int argc, char** argv) {
-    if (!init_sdl3()) {
+    if (!sdl3_init()) {
         return 1;
     }
 
