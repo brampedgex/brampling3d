@@ -3,6 +3,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_vulkan.h>
+
+#define VK_NO_PROTOTYPES
+#include <vulkan/vulkan.h>
+#include <volk.h>
 
 #include <spdlog/spdlog.h>
 
@@ -62,20 +67,32 @@ int main(int argc, char** argv) {
 
     SDL_Window* window;
 
-    if ((window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_HIDDEN)) == nullptr) {
+    if ((window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
         sdl3_perror("Failed to create window");
         return 1;
+    }
+
+    if (volkInitialize() != VK_SUCCESS) {
+        spdlog::critical("Failed to initialize Vulkan!");
+        return 1;
+    }
+
+    uint32_t extensionCount;
+    auto extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
+
+    if (!extensions) {
+        sdl3_perror("failed to get vulkan instance extensions");
+        return 1;
+    }
+
+    spdlog::info("extensionCount: {}", extensionCount);
+    for (uint32_t i = 0; i < extensionCount; i++) {
+        spdlog::info("extension {}: {}", i, extensions[i]);
     }
 
     SDL_SetWindowResizable(window, true);
     SDL_SetWindowMinimumSize(window, 640, 480);
     SDL_ShowWindow(window);
-
-    SDL_Renderer* renderer;
-    if ((renderer = SDL_CreateRenderer(window, "software")) == nullptr) {
-        sdl3_perror("Failed to create renderer");
-        return 1;
-    }
 
     spdlog::info("Initialized window!");
 
@@ -88,10 +105,6 @@ int main(int argc, char** argv) {
                 quit = true;
             }
         }
-
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
-        SDL_RenderPresent(renderer);
 
         std::this_thread::sleep_for(16ms);
     }
