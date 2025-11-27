@@ -12,4 +12,5 @@ target_link_libraries(${PROJECT_NAME}
     Vulkan::Vulkan
     Vulkan::volk
     spdlog::spdlog
+    glm::glm
 )
