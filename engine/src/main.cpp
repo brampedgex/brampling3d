@@ -10,18 +10,53 @@
 
 using namespace std::chrono_literals;
 
-int main(int argc, char** argv) {
-    spdlog::info("hello, spdlog");
+static bool init_sdl3() {
+    SDL_SetLogOutputFunction([](void*, int category, SDL_LogPriority priority, const char* message) {
+        spdlog::level::level_enum level;
+
+        switch (priority) {
+        case SDL_LOG_PRIORITY_TRACE:
+            level = spdlog::level::trace;
+            break;
+        case SDL_LOG_PRIORITY_VERBOSE:
+        case SDL_LOG_PRIORITY_DEBUG:
+            level = spdlog::level::debug;
+            break;
+        case SDL_LOG_PRIORITY_INFO:
+        default:
+            level = spdlog::level::info;
+            break;
+        case SDL_LOG_PRIORITY_WARN:
+            level = spdlog::level::warn;
+            break;
+        case SDL_LOG_PRIORITY_ERROR:
+            level = spdlog::level::err;
+            break;
+        case SDL_LOG_PRIORITY_CRITICAL:
+            level = spdlog::level::critical;
+            break;
+        }
+
+        spdlog::log(level, "[SDL3] {}", message);
+    }, nullptr);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        std::println(std::cerr, "Failed to initialize SDL!");
+        spdlog::critical("Failed to initialize SDL3!");
+        return false;
+    }
+
+    return true;
+}
+
+int main(int argc, char** argv) {
+    if (!init_sdl3()) {
         return 1;
     }
 
     SDL_Window* window;
 
     if ((window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_HIDDEN)) == nullptr) {
-        std::println(std::cerr, "Failed to create window!");
+        spdlog::error("Failed to create window!");
         return 1;
     }
 
@@ -31,7 +66,7 @@ int main(int argc, char** argv) {
 
     SDL_Renderer* renderer = SDL_CreateRenderer(window, "software");
 
-    std::println("Initialized SDL!");
+    spdlog::info("Initialized window!");
 
     bool quit = false;
 
