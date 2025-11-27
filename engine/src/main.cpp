@@ -13,9 +13,12 @@
 
 #include <glm/glm.hpp>
 
-#include "shaders.hpp"
-
 using namespace std::chrono_literals;
+
+extern "C" const unsigned char _binary_shader_frag_spv_start[];
+extern "C" const unsigned char _binary_shader_frag_spv_end[];
+extern "C" const unsigned char _binary_shader_vert_spv_start[];
+extern "C" const unsigned char _binary_shader_vert_spv_end[];
 
 /// Log an error message and the last SDL3 error
 template <class... Args>
@@ -367,10 +370,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    std::vector<uint8_t> vert_shader(_binary_shader_vert_spv_start, _binary_shader_vert_spv_end);
+    std::vector<uint8_t> frag_shader(_binary_shader_frag_spv_start, _binary_shader_frag_spv_end);
+
     VkShaderModuleCreateInfo vertModuleInfo{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = VERTEX_SHADER.size(),
-        .pCode = reinterpret_cast<const uint32_t*>(VERTEX_SHADER.data())
+        .codeSize = vert_shader.size(),
+        .pCode = reinterpret_cast<const uint32_t*>(vert_shader.data())
     };
 
     VkShaderModule vertShaderModule;
@@ -381,8 +387,8 @@ int main(int argc, char** argv) {
 
     VkShaderModuleCreateInfo fragModuleInfo{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-        .codeSize = FRAGMENT_SHADER.size(),
-        .pCode = reinterpret_cast<const uint32_t*>(FRAGMENT_SHADER.data())
+        .codeSize = frag_shader.size(),
+        .pCode = reinterpret_cast<const uint32_t*>(frag_shader.data())
     };
 
     VkShaderModule fragShaderModule;
@@ -400,7 +406,7 @@ int main(int argc, char** argv) {
 
     VkPipelineShaderStageCreateInfo fragStageInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
         .module = fragShaderModule,
         .pName = "main"
     };
