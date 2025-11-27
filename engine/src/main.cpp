@@ -99,7 +99,7 @@ struct Vertex {
 
 constexpr auto VERTICES = std::to_array<Vertex>({
     {{ 0, -0.5 }, { 1, 0, 0 }},
-    {{ 0.5, 0.5 }, { 0, 1, 1 }},
+    {{ 0.5, 0.5 }, { 0, 1, 0 }},
     {{ -0.5, 0.5 }, { 0, 0, 1 }}
 });
 
@@ -126,11 +126,6 @@ int main(int argc, char** argv) {
     if (!extensions) {
         sdl3_perror("failed to get vulkan instance extensions");
         return 1;
-    }
-
-    spdlog::info("extensionCount: {}", extensionCount);
-    for (uint32_t i = 0; i < extensionCount; i++) {
-        spdlog::info("extension {}: {}", i, extensions[i]);
     }
 
     VkApplicationInfo appInfo{
@@ -690,8 +685,17 @@ int main(int argc, char** argv) {
     while (!quit) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) {
+            switch (event.type) {
+            case SDL_EVENT_QUIT:
                 quit = true;
+                break;
+            case SDL_EVENT_KEY_DOWN:
+                if (event.key.key == SDLK_Q) {
+                    quit = true;
+                }
+                break;
+            default:
+                break;
             }
         }
 
@@ -746,6 +750,8 @@ int main(int argc, char** argv) {
 
         std::this_thread::sleep_for(16ms);
     }
+
+    spdlog::info("quitting");
 
     return 0;
 }
