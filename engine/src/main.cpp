@@ -1,5 +1,3 @@
-#include <print>
-#include <iostream>
 #include <thread>
 
 #include <SDL3/SDL.h>
@@ -9,6 +7,13 @@
 #include <spdlog/spdlog.h>
 
 using namespace std::chrono_literals;
+
+/// Log an error message and the last SDL3 error
+template <class... Args>
+static void sdl3_perror(fmt::format_string<Args...> fmt, Args&&... args) {
+    std::string str = fmt::format(fmt, std::forward<Args>(args)...);
+    spdlog::error("{}: {}", str, SDL_GetError());
+}
 
 static bool init_sdl3() {
     SDL_SetLogOutputFunction([](void*, int category, SDL_LogPriority priority, const char* message) {
@@ -40,8 +45,10 @@ static bool init_sdl3() {
         spdlog::log(level, "[SDL3] {}", message);
     }, nullptr);
 
+    SDL_SetAppMetadata("brampling3D", nullptr, "brampling3D");
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        spdlog::critical("Failed to initialize SDL3!");
+        sdl3_perror("Failed to initialize SDL3");
         return false;
     }
 
@@ -56,7 +63,7 @@ int main(int argc, char** argv) {
     SDL_Window* window;
 
     if ((window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_HIDDEN)) == nullptr) {
-        spdlog::error("Failed to create window!");
+        sdl3_perror("Failed to create window");
         return 1;
     }
 
@@ -64,7 +71,11 @@ int main(int argc, char** argv) {
     SDL_SetWindowMinimumSize(window, 640, 480);
     SDL_ShowWindow(window);
 
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, "software");
+    SDL_Renderer* renderer;
+    if ((renderer = SDL_CreateRenderer(window, "software")) == nullptr) {
+        sdl3_perror("Failed to create renderer");
+        return 1;
+    }
 
     spdlog::info("Initialized window!");
 
