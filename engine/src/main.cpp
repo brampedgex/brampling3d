@@ -1,6 +1,5 @@
-#include <thread>
+#include "sdl3.hpp"
 
-#include <SDL3/SDL.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_vulkan.h>
@@ -8,8 +7,6 @@
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <volk.h>
-
-#include <spdlog/spdlog.h>
 
 #include <glm/glm.hpp>
 
@@ -19,53 +16,6 @@ extern "C" const unsigned char _binary_shader_frag_spv_start[];
 extern "C" const unsigned char _binary_shader_frag_spv_end[];
 extern "C" const unsigned char _binary_shader_vert_spv_start[];
 extern "C" const unsigned char _binary_shader_vert_spv_end[];
-
-/// Log an error message and the last SDL3 error
-template <class... Args>
-static void sdl3_perror(fmt::format_string<Args...> fmt, Args&&... args) {
-    std::string str = fmt::format(fmt, std::forward<Args>(args)...);
-    spdlog::error("{}: {}", str, SDL_GetError());
-}
-
-static bool sdl3_init() {
-    SDL_SetLogOutputFunction([](void*, int category, SDL_LogPriority priority, const char* message) {
-        spdlog::level::level_enum level;
-
-        switch (priority) {
-        case SDL_LOG_PRIORITY_TRACE:
-            level = spdlog::level::trace;
-            break;
-        case SDL_LOG_PRIORITY_VERBOSE:
-        case SDL_LOG_PRIORITY_DEBUG:
-            level = spdlog::level::debug;
-            break;
-        case SDL_LOG_PRIORITY_INFO:
-        default:
-            level = spdlog::level::info;
-            break;
-        case SDL_LOG_PRIORITY_WARN:
-            level = spdlog::level::warn;
-            break;
-        case SDL_LOG_PRIORITY_ERROR:
-            level = spdlog::level::err;
-            break;
-        case SDL_LOG_PRIORITY_CRITICAL:
-            level = spdlog::level::critical;
-            break;
-        }
-
-        spdlog::log(level, "[SDL3] {}", message);
-    }, nullptr);
-
-    SDL_SetAppMetadata("brampling3D", nullptr, "brampling3D");
-
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        sdl3_perror("Failed to initialize SDL3");
-        return false;
-    }
-
-    return true;
-}
 
 struct Vertex {
     glm::vec2 pos;
@@ -109,34 +59,36 @@ int main(int argc, char** argv) {
     }
 
     SDL_Window* window;
-
     if ((window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
         sdl3_perror("Failed to create window");
         return 1;
     }
 
+    // Load Vulkan APIs
     if (volkInitialize() != VK_SUCCESS) {
         spdlog::critical("Failed to initialize Vulkan!");
         return 1;
     }
 
+    // Get instance extensions needed for vkCreateInstance
     uint32_t extensionCount;
     auto extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
-
     if (!extensions) {
         sdl3_perror("failed to get vulkan instance extensions");
         return 1;
     }
 
+    // ApplicationInfo lets drivers enable application-specific optimizations. So Intel, NVIDIA, and AMD can implement the best optimizations for brampling3D.
     VkApplicationInfo appInfo{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "brampling3D",
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-        .pEngineName = "No Engine",
+        .pEngineName = "brampling3D",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
         .apiVersion = VK_API_VERSION_1_0
     };
 
+    // Create a vulkan instance with the required extensions
     VkInstanceCreateInfo createInfo{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &appInfo,
@@ -151,21 +103,23 @@ int main(int argc, char** argv) {
     }
 
     volkLoadInstance(instance);
+
     spdlog::info("vulkan instance created");
 
+    // Create the window surface. This is our target for presenting window contents.
     VkSurfaceKHR surface;
     if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface)) {
         sdl3_perror("Failed to create vulkan surface");
         return 1;
     }
 
+    // Find a suitable physical device
     uint32_t deviceCount;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     if (deviceCount == 0) {
         spdlog::error("Failed to enumerate vulkan devices");
         return 1;
     }
-
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
@@ -207,6 +161,9 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    spdlog::info("presentFamily: {}, graphicsFamily: {}", presentFamily, graphicsFamily);
+
+    // Create a logical device.
     float queuePriority = 1;
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     queueCreateInfos.push_back({
@@ -296,6 +253,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Create views for each swapchain image
     uint32_t imageCount;
     vkGetSwapchainImagesKHR(device, swapchain, &imageCount, nullptr);
     std::vector<VkImage> swapchainImages(imageCount);
@@ -329,6 +287,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Create a VkRenderPass, which (seemingly?) represents the bound render targets / attachments
     VkAttachmentDescription colorAttachment{
         .format = surfaceFormat.format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -364,6 +323,8 @@ int main(int argc, char** argv) {
         spdlog::critical("failed to create render pass");
         return 1;
     }
+
+    // Compile shaders and create a graphics pipeline.
 
     std::vector<uint8_t> vert_shader(_binary_shader_vert_spv_start, _binary_shader_vert_spv_end);
     std::vector<uint8_t> frag_shader(_binary_shader_frag_spv_start, _binary_shader_frag_spv_end);
@@ -457,7 +418,7 @@ int main(int argc, char** argv) {
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_BACK_BIT,
         .frontFace = VK_FRONT_FACE_CLOCKWISE,
-        .lineWidth = 1.f,
+        .lineWidth = 1,
     };
 
     VkPipelineMultisampleStateCreateInfo multisampling{
@@ -467,11 +428,11 @@ int main(int argc, char** argv) {
     };
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{
+        .blendEnable = VK_FALSE,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | 
                           VK_COLOR_COMPONENT_G_BIT | 
                           VK_COLOR_COMPONENT_B_BIT | 
                           VK_COLOR_COMPONENT_A_BIT,
-        .blendEnable = VK_FALSE
     };
 
     VkPipelineColorBlendStateCreateInfo colorBlending{
@@ -515,6 +476,7 @@ int main(int argc, char** argv) {
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
 
+    // Create frame buffers attached to each swapchain image
     std::vector<VkFramebuffer> swapchainFramebuffers(imageCount);
     for (size_t i = 0; i < imageCount; i++) {
         VkImageView attachments[] = {swapchainImageViews[i]};
@@ -534,6 +496,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Create a grapics command pool.
     VkCommandPoolCreateInfo poolInfo{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
@@ -546,9 +509,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Create the vertex buffer.
     VkBuffer vertexBuffer;
     VkDeviceMemory vertexBufferMemory;
-    VkBufferCreateInfo bufferInfo {
+    VkBufferCreateInfo bufferInfo{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sizeof(Vertex) * VERTICES.size(),
         .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -560,12 +524,14 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Allocate memory and bind it to the buffer
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
 
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
+    // ?????
     uint32_t memoryTypeIndex = UINT32_MAX;
     for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
         if ((memRequirements.memoryTypeBits & (i << i)) &&
@@ -591,11 +557,14 @@ int main(int argc, char** argv) {
     }
 
     vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+
+    // Upload vertex data.
     void* data;
     vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
     memcpy(data, VERTICES.data(), static_cast<size_t>(bufferInfo.size));
     vkUnmapMemory(device, vertexBufferMemory);
 
+    // Allocate a command buffer for each swapchain image.
     std::vector<VkCommandBuffer> commandBuffers(imageCount);
     VkCommandBufferAllocateInfo allocInfoCmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -622,18 +591,20 @@ int main(int argc, char** argv) {
 
         VkClearValue clearColor = {{{0.2, 0.2, 0.2, 1}}};
 
+        // Begin the render pass by clearing the image.
         VkRenderPassBeginInfo rpBeginInfo{
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = renderPass,
             .framebuffer = swapchainFramebuffers[i],
             .renderArea = {
-                .offset = {0, 0 },
+                .offset = { 0, 0 },
                 .extent = swapchainExtent
             },
             .clearValueCount = 1,
             .pClearValues = &clearColor
         };
 
+        // Then draw.
         vkCmdBeginRenderPass(commandBuffers[i], &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
         VkBuffer vertexBuffers[] = {vertexBuffer};
@@ -674,15 +645,19 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    SDL_SetWindowResizable(window, true);
+    // Finally Vulkan initialization is done.
+    // Present our SDL window and start the loop.
+
+    // SDL_SetWindowResizable(window, true);
     SDL_SetWindowMinimumSize(window, 640, 480);
     SDL_ShowWindow(window);
 
-    spdlog::info("Initialized window!");
+    spdlog::info("Showing window");
 
     bool quit = false;
 
     while (!quit) {
+        // Poll window events before rendering. (why is this not bound to the window?)
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             switch (event.type) {
@@ -714,6 +689,7 @@ int main(int argc, char** argv) {
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
 
+        // Submit the command buffer that we already recorded.
         VkSubmitInfo submitInfo{
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 1,
@@ -748,6 +724,7 @@ int main(int argc, char** argv) {
             continue;
         }
 
+        // 60 fps limit so as to not nuke the CPU (TODO: vsync?)
         std::this_thread::sleep_for(16ms);
     }
 

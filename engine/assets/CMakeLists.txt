@@ -20,8 +20,6 @@ set(SHADER_BINARY_DIR "${PROJECT_BINARY_DIR}/shaders")
 set(ENGINE_ASSETS "")
 
 function(CompileShader SRC TYPE WORKING_DIR)
-    message(INFO "CompileShader: ${SRC}, ${TYPE}, ${WORKING_DIR}")
-
     get_filename_component(SRC_NAME ${SRC} NAME_WLE)
     get_filename_component(SRC_DIR ${SRC} DIRECTORY)
 

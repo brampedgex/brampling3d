@@ -14,4 +14,6 @@ target_link_libraries(${PROJECT_NAME}
     glm::glm
 )
 
+target_precompile_headers(${PROJECT_NAME} PRIVATE "src/pch.hpp")
+
 add_subdirectory(assets)
