@@ -619,9 +619,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    VkSemaphore imageAvailableSemaphore;
-    VkSemaphore renderFinishedSemaphore;
-    VkFence inFlightFence;
+    std::vector<VkSemaphore> imageAvailableSemaphores(imageCount);
+    std::vector<VkSemaphore> renderFinishedSemaphores(imageCount);
+    std::vector<VkFence> inFlightFences(imageCount);
     VkSemaphoreCreateInfo semaphoreInfo{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
     };
@@ -630,19 +630,21 @@ int main(int argc, char** argv) {
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
 
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS) {
-        spdlog::critical("failed to create image available semaphore");
-        return 1;
-    }
+    for (size_t i = 0; i < imageCount; i++) {
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS) {
+            spdlog::critical("failed to create image available semaphore");
+            return 1;
+        }
 
-    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS) {
-        spdlog::critical("failed to create render finished semaphore");
-        return 1;
-    }
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS) {
+            spdlog::critical("failed to create render finished semaphore");
+            return 1;
+        }
 
-    if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS) {
-        spdlog::critical("failed to create in flight fence");
-        return 1;
+        if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+            spdlog::critical("failed to create in flight fence");
+            return 1;
+        }
     }
 
     // Finally Vulkan initialization is done.
@@ -653,6 +655,8 @@ int main(int argc, char** argv) {
     SDL_ShowWindow(window);
 
     spdlog::info("Showing window");
+
+    uint32_t currentFrame = 0;
 
     bool quit = false;
 
@@ -674,6 +678,9 @@ int main(int argc, char** argv) {
             }
         }
 
+        VkSemaphore imageAvailableSemaphore = imageAvailableSemaphores[currentFrame];
+        VkFence inFlightFence = inFlightFences[currentFrame];
+
         vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
         vkResetFences(device, 1, &inFlightFence);
 
@@ -687,7 +694,7 @@ int main(int argc, char** argv) {
 
         VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
         VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[imageIndex]};
 
         // Submit the command buffer that we already recorded.
         VkSubmitInfo submitInfo{
@@ -723,6 +730,8 @@ int main(int argc, char** argv) {
             quit = true;
             continue;
         }
+
+        currentFrame = (currentFrame + 1) % imageCount;
 
         // 60 fps limit so as to not nuke the CPU (TODO: vsync?)
         std::this_thread::sleep_for(16ms);
