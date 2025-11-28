@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
     }
 
     // Get instance extensions needed for vkCreateInstance
-    uint32_t extensionCount;
+    u32 extensionCount;
     auto extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
     if (!extensions) {
         sdl3_perror("failed to get vulkan instance extensions");
@@ -114,7 +114,7 @@ int main(int argc, char** argv) {
     }
 
     // Find a suitable physical device
-    uint32_t deviceCount;
+    u32 deviceCount;
     vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
     if (deviceCount == 0) {
         spdlog::error("Failed to enumerate vulkan devices");
@@ -124,11 +124,11 @@ int main(int argc, char** argv) {
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    uint32_t graphicsFamily = UINT32_MAX;
-    uint32_t presentFamily = UINT32_MAX;
+    u32 graphicsFamily = UINT32_MAX;
+    u32 presentFamily = UINT32_MAX;
 
     for (const auto& device : devices) {
-        uint32_t queueFamilyCount = 0;
+        u32 queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
 
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
 
         bool graphicsFound = false;
         bool presentFound = false;
-        for (uint32_t i = 0; i < queueFamilyCount; i++) {
+        for (u32 i = 0; i < queueFamilyCount; i++) {
             if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 graphicsFamily = i;
                 graphicsFound = true;
@@ -187,7 +187,7 @@ int main(int argc, char** argv) {
     const char* deviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
     VkDeviceCreateInfo deviceCreateInfo{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = (uint32_t) queueCreateInfos.size(),
+        .queueCreateInfoCount = (u32) queueCreateInfos.size(),
         .pQueueCreateInfos = queueCreateInfos.data(),
         .enabledExtensionCount = 1,
         .ppEnabledExtensionNames = deviceExtensions,
@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
 
-    uint32_t formatCount;
+    u32 formatCount;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
     std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, surfaceFormats.data());
@@ -227,14 +227,14 @@ int main(int argc, char** argv) {
     if (swapchainExtent.width == UINT32_MAX) {
         int width, height;
         SDL_GetWindowSizeInPixels(window, &width, &height);
-        swapchainExtent.width = (uint32_t) width;
-        swapchainExtent.height = (uint32_t) height;
+        swapchainExtent.width = (u32) width;
+        swapchainExtent.height = (u32) height;
     }
 
     VkSwapchainCreateInfoKHR swapchainCreateInfo{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface,
-        .minImageCount = 2,
+        .minImageCount = capabilities.minImageCount,
         .imageFormat = surfaceFormat.format,
         .imageColorSpace = surfaceFormat.colorSpace,
         .imageExtent = swapchainExtent,
@@ -254,13 +254,13 @@ int main(int argc, char** argv) {
     }
 
     // Create views for each swapchain image
-    uint32_t imageCount;
+    u32 imageCount;
     vkGetSwapchainImagesKHR(device, swapchain, &imageCount, nullptr);
     std::vector<VkImage> swapchainImages(imageCount);
     vkGetSwapchainImagesKHR(device, swapchain, &imageCount, swapchainImages.data());
 
     std::vector<VkImageView> swapchainImageViews(imageCount);
-    for (size_t i = 0; i < imageCount; i++) {
+    for (usize i = 0; i < imageCount; i++) {
         VkImageViewCreateInfo viewInfo{
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
             .image = swapchainImages[i],
@@ -326,13 +326,13 @@ int main(int argc, char** argv) {
 
     // Compile shaders and create a graphics pipeline.
 
-    std::vector<uint8_t> vert_shader(_binary_shader_vert_spv_start, _binary_shader_vert_spv_end);
-    std::vector<uint8_t> frag_shader(_binary_shader_frag_spv_start, _binary_shader_frag_spv_end);
+    std::vector<u8> vert_shader(_binary_shader_vert_spv_start, _binary_shader_vert_spv_end);
+    std::vector<u8> frag_shader(_binary_shader_frag_spv_start, _binary_shader_frag_spv_end);
 
     VkShaderModuleCreateInfo vertModuleInfo{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = vert_shader.size(),
-        .pCode = reinterpret_cast<const uint32_t*>(vert_shader.data())
+        .pCode = reinterpret_cast<const u32*>(vert_shader.data())
     };
 
     VkShaderModule vertShaderModule;
@@ -344,7 +344,7 @@ int main(int argc, char** argv) {
     VkShaderModuleCreateInfo fragModuleInfo{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = frag_shader.size(),
-        .pCode = reinterpret_cast<const uint32_t*>(frag_shader.data())
+        .pCode = reinterpret_cast<const u32*>(frag_shader.data())
     };
 
     VkShaderModule fragShaderModule;
@@ -379,7 +379,7 @@ int main(int argc, char** argv) {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
         .pVertexBindingDescriptions = &bindingDesc,
-        .vertexAttributeDescriptionCount = (uint32_t) attrDescs.size(),
+        .vertexAttributeDescriptionCount = (u32) attrDescs.size(),
         .pVertexAttributeDescriptions = attrDescs.data()
     };
 
@@ -478,7 +478,7 @@ int main(int argc, char** argv) {
 
     // Create frame buffers attached to each swapchain image
     std::vector<VkFramebuffer> swapchainFramebuffers(imageCount);
-    for (size_t i = 0; i < imageCount; i++) {
+    for (usize i = 0; i < imageCount; i++) {
         VkImageView attachments[] = {swapchainImageViews[i]};
         VkFramebufferCreateInfo framebufferInfo{
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
@@ -532,8 +532,8 @@ int main(int argc, char** argv) {
     vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
 
     // ?????
-    uint32_t memoryTypeIndex = UINT32_MAX;
-    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+    u32 memoryTypeIndex = UINT32_MAX;
+    for (u32 i = 0; i < memProperties.memoryTypeCount; i++) {
         if ((memRequirements.memoryTypeBits & (i << i)) &&
             (memProperties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
             memoryTypeIndex = i;
@@ -561,7 +561,7 @@ int main(int argc, char** argv) {
     // Upload vertex data.
     void* data;
     vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-    memcpy(data, VERTICES.data(), static_cast<size_t>(bufferInfo.size));
+    memcpy(data, VERTICES.data(), static_cast<usize>(bufferInfo.size));
     vkUnmapMemory(device, vertexBufferMemory);
 
     // Allocate a command buffer for each swapchain image.
@@ -579,7 +579,7 @@ int main(int argc, char** argv) {
     }
 
     spdlog::info("recording {} command buffers", imageCount);
-    for (size_t i = 0; i < imageCount; i++) {
+    for (usize i = 0; i < imageCount; i++) {
         VkCommandBufferBeginInfo beginInfo{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
         };
@@ -610,7 +610,7 @@ int main(int argc, char** argv) {
         VkBuffer vertexBuffers[] = {vertexBuffer};
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdDraw(commandBuffers[i], (uint32_t) VERTICES.size(), 1, 0, 0);
+        vkCmdDraw(commandBuffers[i], (u32) VERTICES.size(), 1, 0, 0);
         vkCmdEndRenderPass(commandBuffers[i]);
 
         if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
@@ -630,7 +630,7 @@ int main(int argc, char** argv) {
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
 
-    for (size_t i = 0; i < imageCount; i++) {
+    for (usize i = 0; i < imageCount; i++) {
         if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS) {
             spdlog::critical("failed to create image available semaphore");
             return 1;
@@ -656,7 +656,7 @@ int main(int argc, char** argv) {
 
     spdlog::info("Showing window");
 
-    uint32_t currentFrame = 0;
+    u32 currentFrame = 0;
 
     bool quit = false;
 
@@ -684,7 +684,7 @@ int main(int argc, char** argv) {
         vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
         vkResetFences(device, 1, &inFlightFence);
 
-        uint32_t imageIndex;
+        u32 imageIndex;
         VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
         if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
             spdlog::error("failed to acquire next image: {}", (int)acquireResult);
