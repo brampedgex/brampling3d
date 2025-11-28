@@ -1,6 +1,8 @@
 #pragma once
 
 #include <SDL3/SDL.h>
+#include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_vulkan.h>
 
 /// Log an error message and the last SDL3 error
 template <class... Args>

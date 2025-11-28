@@ -1,9 +1,5 @@
 #include "sdl3.hpp"
 
-#include <SDL3/SDL_render.h>
-#include <SDL3/SDL_hints.h>
-#include <SDL3/SDL_vulkan.h>
-
 #define VK_NO_PROTOTYPES
 #include <vulkan/vulkan.h>
 #include <volk.h>
@@ -71,15 +67,15 @@ int main(int argc, char** argv) {
     }
 
     // Get instance extensions needed for vkCreateInstance
-    u32 extensionCount;
-    auto extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
+    u32 extension_count;
+    auto extensions = SDL_Vulkan_GetInstanceExtensions(&extension_count);
     if (!extensions) {
         sdl3_perror("failed to get vulkan instance extensions");
         return 1;
     }
 
     // ApplicationInfo lets drivers enable application-specific optimizations. So Intel, NVIDIA, and AMD can implement the best optimizations for brampling3D.
-    VkApplicationInfo appInfo{
+    VkApplicationInfo app_info{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "brampling3D",
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
@@ -89,15 +85,15 @@ int main(int argc, char** argv) {
     };
 
     // Create a vulkan instance with the required extensions
-    VkInstanceCreateInfo createInfo{
+    VkInstanceCreateInfo create_info{
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .pApplicationInfo = &appInfo,
-        .enabledExtensionCount = extensionCount,
+        .pApplicationInfo = &app_info,
+        .enabledExtensionCount = extension_count,
         .ppEnabledExtensionNames = extensions
     };
 
     VkInstance instance;
-    if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
+    if (vkCreateInstance(&create_info, nullptr, &instance) != VK_SUCCESS) {
         spdlog::error("Failed to create vulkan instance");
         return 1;
     }
@@ -114,130 +110,130 @@ int main(int argc, char** argv) {
     }
 
     // Find a suitable physical device
-    u32 deviceCount;
-    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
-    if (deviceCount == 0) {
+    u32 device_count;
+    vkEnumeratePhysicalDevices(instance, &device_count, nullptr);
+    if (device_count == 0) {
         spdlog::error("Failed to enumerate vulkan devices");
         return 1;
     }
-    std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+    std::vector<VkPhysicalDevice> devices(device_count);
+    vkEnumeratePhysicalDevices(instance, &device_count, devices.data());
 
-    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    u32 graphicsFamily = UINT32_MAX;
-    u32 presentFamily = UINT32_MAX;
+    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+    u32 graphics_family = UINT32_MAX;
+    u32 present_family = UINT32_MAX;
 
     for (const auto& device : devices) {
-        u32 queueFamilyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+        u32 queue_family_count = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
 
-        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+        std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
 
-        bool graphicsFound = false;
-        bool presentFound = false;
-        for (u32 i = 0; i < queueFamilyCount; i++) {
-            if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                graphicsFamily = i;
-                graphicsFound = true;
+        bool graphics_found = false;
+        bool present_found = false;
+        for (u32 i = 0; i < queue_family_count; i++) {
+            if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                graphics_family = i;
+                graphics_found = true;
             }
 
-            VkBool32 presentSupport = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-            if (presentSupport) {
-                presentFamily = i;
-                presentFound = true;
+            VkBool32 present_support = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &present_support);
+            if (present_support) {
+                present_family = i;
+                present_found = true;
             }
         }
 
-        if (graphicsFound && presentFound) {
-            physicalDevice = device;
+        if (graphics_found && present_found) {
+            physical_device = device;
             break;
         }
     }
 
-    if (physicalDevice == VK_NULL_HANDLE) {
+    if (physical_device == VK_NULL_HANDLE) {
         spdlog::critical("Failed to find suitable vulkan device");
         return 1;
     }
 
-    spdlog::info("presentFamily: {}, graphicsFamily: {}", presentFamily, graphicsFamily);
+    spdlog::info("present_family: {}, graphics_family: {}", present_family, graphics_family);
 
     // Create a logical device.
-    float queuePriority = 1;
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    queueCreateInfos.push_back({
+    f32 queue_priority = 1;
+    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
+    queue_create_infos.push_back({
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = graphicsFamily,
+        .queueFamilyIndex = graphics_family,
         .queueCount = 1,
-        .pQueuePriorities = &queuePriority
+        .pQueuePriorities = &queue_priority
     });
 
-    if (graphicsFamily != presentFamily) {
-        queueCreateInfos.push_back({
+    if (graphics_family != present_family) {
+        queue_create_infos.push_back({
             .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = presentFamily,
+            .queueFamilyIndex = present_family,
             .queueCount = 1,
-            .pQueuePriorities = &queuePriority
+            .pQueuePriorities = &queue_priority
         });
     }
 
-    VkPhysicalDeviceFeatures deviceFeatures{};
+    VkPhysicalDeviceFeatures device_features{};
 
-    const char* deviceExtensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-    VkDeviceCreateInfo deviceCreateInfo{
+    const char* device_extensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    VkDeviceCreateInfo device_create_info{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = (u32) queueCreateInfos.size(),
-        .pQueueCreateInfos = queueCreateInfos.data(),
+        .queueCreateInfoCount = (u32) queue_create_infos.size(),
+        .pQueueCreateInfos = queue_create_infos.data(),
         .enabledExtensionCount = 1,
-        .ppEnabledExtensionNames = deviceExtensions,
-        .pEnabledFeatures = &deviceFeatures,
+        .ppEnabledExtensionNames = device_extensions,
+        .pEnabledFeatures = &device_features,
     };
 
     VkDevice device;
-    if (vkCreateDevice(physicalDevice, &deviceCreateInfo, nullptr, &device) != VK_SUCCESS) {
+    if (vkCreateDevice(physical_device, &device_create_info, nullptr, &device) != VK_SUCCESS) {
         spdlog::critical("Failed to create vulkan device");
         return 1;
     }
 
     volkLoadDevice(device);
 
-    VkQueue graphicsQueue, presentQueue;
-    vkGetDeviceQueue(device, graphicsFamily, 0, &graphicsQueue);
-    vkGetDeviceQueue(device, presentFamily, 0, &presentQueue);
+    VkQueue graphics_queue, present_queue;
+    vkGetDeviceQueue(device, graphics_family, 0, &graphics_queue);
+    vkGetDeviceQueue(device, present_family, 0, &present_queue);
 
     // Create swapchain
     VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities);
 
-    u32 formatCount;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
-    std::vector<VkSurfaceFormatKHR> surfaceFormats(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, surfaceFormats.data());
+    u32 format_count;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, nullptr);
+    std::vector<VkSurfaceFormatKHR> surface_formats(format_count);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &format_count, surface_formats.data());
     
-    VkSurfaceFormatKHR surfaceFormat = surfaceFormats[0];
-    for (const auto& format : surfaceFormats) {
+    VkSurfaceFormatKHR surface_format = surface_formats[0];
+    for (const auto& format : surface_formats) {
         if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            surfaceFormat = format;
+            surface_format = format;
             break;
         }
     }
 
-    VkExtent2D swapchainExtent = capabilities.currentExtent;
-    if (swapchainExtent.width == UINT32_MAX) {
+    VkExtent2D swapchain_extent = capabilities.currentExtent;
+    if (swapchain_extent.width == UINT32_MAX) {
         int width, height;
         SDL_GetWindowSizeInPixels(window, &width, &height);
-        swapchainExtent.width = (u32) width;
-        swapchainExtent.height = (u32) height;
+        swapchain_extent.width = (u32) width;
+        swapchain_extent.height = (u32) height;
     }
 
-    VkSwapchainCreateInfoKHR swapchainCreateInfo{
+    VkSwapchainCreateInfoKHR swapchain_create_info{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = surface,
         .minImageCount = capabilities.minImageCount,
-        .imageFormat = surfaceFormat.format,
-        .imageColorSpace = surfaceFormat.colorSpace,
-        .imageExtent = swapchainExtent,
+        .imageFormat = surface_format.format,
+        .imageColorSpace = surface_format.colorSpace,
+        .imageExtent = swapchain_extent,
         .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
@@ -248,24 +244,24 @@ int main(int argc, char** argv) {
     };
     
     VkSwapchainKHR swapchain;
-    if (vkCreateSwapchainKHR(device, &swapchainCreateInfo, nullptr, &swapchain) != VK_SUCCESS) {
+    if (vkCreateSwapchainKHR(device, &swapchain_create_info, nullptr, &swapchain) != VK_SUCCESS) {
         spdlog::critical("Failed to create swapchain");
         return 1;
     }
 
     // Create views for each swapchain image
-    u32 imageCount;
-    vkGetSwapchainImagesKHR(device, swapchain, &imageCount, nullptr);
-    std::vector<VkImage> swapchainImages(imageCount);
-    vkGetSwapchainImagesKHR(device, swapchain, &imageCount, swapchainImages.data());
+    u32 image_count;
+    vkGetSwapchainImagesKHR(device, swapchain, &image_count, nullptr);
+    std::vector<VkImage> swapchain_images(image_count);
+    vkGetSwapchainImagesKHR(device, swapchain, &image_count, swapchain_images.data());
 
-    std::vector<VkImageView> swapchainImageViews(imageCount);
-    for (usize i = 0; i < imageCount; i++) {
-        VkImageViewCreateInfo viewInfo{
+    std::vector<VkImageView> swapchain_image_views(image_count);
+    for (usize i = 0; i < image_count; i++) {
+        VkImageViewCreateInfo view_info{
             .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = swapchainImages[i],
+            .image = swapchain_images[i],
             .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = surfaceFormat.format,
+            .format = surface_format.format,
             .components = {
                 .r = VK_COMPONENT_SWIZZLE_IDENTITY,
                 .g = VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -281,15 +277,15 @@ int main(int argc, char** argv) {
             }
         };
 
-        if (vkCreateImageView(device, &viewInfo, nullptr, &swapchainImageViews[i]) != VK_SUCCESS) {
+        if (vkCreateImageView(device, &view_info, nullptr, &swapchain_image_views[i]) != VK_SUCCESS) {
             spdlog::critical("failed to create image view {}", i);
             return 1;
         }
     }
 
     // Create a VkRenderPass, which (seemingly?) represents the bound render targets / attachments
-    VkAttachmentDescription colorAttachment{
-        .format = surfaceFormat.format,
+    VkAttachmentDescription color_attachment{
+        .format = surface_format.format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -299,7 +295,7 @@ int main(int argc, char** argv) {
         .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
     };
 
-    VkAttachmentReference colorAttachmentRef{
+    VkAttachmentReference color_attachment_ref{
         .attachment = 0,
         .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
     };
@@ -307,19 +303,19 @@ int main(int argc, char** argv) {
     VkSubpassDescription subpass{
         .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
         .colorAttachmentCount = 1,
-        .pColorAttachments = &colorAttachmentRef
+        .pColorAttachments = &color_attachment_ref
     };
 
-    VkRenderPassCreateInfo renderPassInfo{
+    VkRenderPassCreateInfo render_pass_info{
         .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
         .attachmentCount = 1,
-        .pAttachments = &colorAttachment,
+        .pAttachments = &color_attachment,
         .subpassCount = 1,
         .pSubpasses = &subpass
     };
 
-    VkRenderPass renderPass;
-    if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+    VkRenderPass render_pass;
+    if (vkCreateRenderPass(device, &render_pass_info, nullptr, &render_pass) != VK_SUCCESS) {
         spdlog::critical("failed to create render pass");
         return 1;
     }
@@ -329,61 +325,61 @@ int main(int argc, char** argv) {
     std::vector<u8> vert_shader(_binary_shader_vert_spv_start, _binary_shader_vert_spv_end);
     std::vector<u8> frag_shader(_binary_shader_frag_spv_start, _binary_shader_frag_spv_end);
 
-    VkShaderModuleCreateInfo vertModuleInfo{
+    VkShaderModuleCreateInfo vert_module_info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = vert_shader.size(),
         .pCode = reinterpret_cast<const u32*>(vert_shader.data())
     };
 
-    VkShaderModule vertShaderModule;
-    if (vkCreateShaderModule(device, &vertModuleInfo, nullptr, &vertShaderModule) != VK_SUCCESS) {
+    VkShaderModule vert_shader_module;
+    if (vkCreateShaderModule(device, &vert_module_info, nullptr, &vert_shader_module) != VK_SUCCESS) {
         spdlog::critical("failed to create vertex shader");
         return 1;
     }
 
-    VkShaderModuleCreateInfo fragModuleInfo{
+    VkShaderModuleCreateInfo frag_module_info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = frag_shader.size(),
         .pCode = reinterpret_cast<const u32*>(frag_shader.data())
     };
 
-    VkShaderModule fragShaderModule;
-    if (vkCreateShaderModule(device, &fragModuleInfo, nullptr, &fragShaderModule) != VK_SUCCESS) {
+    VkShaderModule frag_shader_module;
+    if (vkCreateShaderModule(device, &frag_module_info, nullptr, &frag_shader_module) != VK_SUCCESS) {
         spdlog::critical("failed to create fragment shader");
         return 1;
     }
 
-    VkPipelineShaderStageCreateInfo vertStageInfo{
+    VkPipelineShaderStageCreateInfo vert_stage_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .stage = VK_SHADER_STAGE_VERTEX_BIT,
-        .module = vertShaderModule,
+        .module = vert_shader_module,
         .pName = "main"
     };
 
-    VkPipelineShaderStageCreateInfo fragStageInfo{
+    VkPipelineShaderStageCreateInfo frag_stage_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
         .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
-        .module = fragShaderModule,
+        .module = frag_shader_module,
         .pName = "main"
     };
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = {
-        vertStageInfo,
-        fragStageInfo
+    VkPipelineShaderStageCreateInfo shader_stages[] = {
+        vert_stage_info,
+        frag_stage_info
     };
 
-    auto bindingDesc = Vertex::binding_description();
-    auto attrDescs = Vertex::attribute_descriptions();
+    auto binding_desc = Vertex::binding_description();
+    auto attr_descs = Vertex::attribute_descriptions();
 
-    VkPipelineVertexInputStateCreateInfo vertexInputInfo{
+    VkPipelineVertexInputStateCreateInfo vertex_input_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
         .vertexBindingDescriptionCount = 1,
-        .pVertexBindingDescriptions = &bindingDesc,
-        .vertexAttributeDescriptionCount = (u32) attrDescs.size(),
-        .pVertexAttributeDescriptions = attrDescs.data()
+        .pVertexBindingDescriptions = &binding_desc,
+        .vertexAttributeDescriptionCount = (u32) attr_descs.size(),
+        .pVertexAttributeDescriptions = attr_descs.data()
     };
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{
+    VkPipelineInputAssemblyStateCreateInfo input_assembly{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
         .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
         .primitiveRestartEnable = VK_FALSE
@@ -392,18 +388,18 @@ int main(int argc, char** argv) {
     VkViewport viewport{
         .x = 0,
         .y = 0,
-        .width = (float) swapchainExtent.width,
-        .height = (float) swapchainExtent.height,
+        .width = (float) swapchain_extent.width,
+        .height = (float) swapchain_extent.height,
         .minDepth = 0,
         .maxDepth = 0
     };
 
     VkRect2D scissor{
         .offset = { 0, 0 },
-        .extent = swapchainExtent
+        .extent = swapchain_extent
     };
 
-    VkPipelineViewportStateCreateInfo viewportState{
+    VkPipelineViewportStateCreateInfo viewport_state{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
         .viewportCount = 1,
         .pViewports = &viewport,
@@ -427,7 +423,7 @@ int main(int argc, char** argv) {
         .sampleShadingEnable = VK_FALSE,
     };
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{
+    VkPipelineColorBlendAttachmentState color_blend_attachments{
         .blendEnable = VK_FALSE,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | 
                           VK_COLOR_COMPONENT_G_BIT | 
@@ -435,213 +431,213 @@ int main(int argc, char** argv) {
                           VK_COLOR_COMPONENT_A_BIT,
     };
 
-    VkPipelineColorBlendStateCreateInfo colorBlending{
+    VkPipelineColorBlendStateCreateInfo color_blending{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
         .logicOpEnable = VK_FALSE,
         .attachmentCount = 1,
-        .pAttachments = &colorBlendAttachment
+        .pAttachments = &color_blend_attachments
     };
 
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{
+    VkPipelineLayoutCreateInfo pipeline_layout_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
     };
 
-    VkPipelineLayout pipelineLayout;
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+    VkPipelineLayout pipeline_layout;
+    if (vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
         spdlog::critical("failed to create pipeline layout");
         return 1;
     }
 
-    VkGraphicsPipelineCreateInfo pipelineInfo{
+    VkGraphicsPipelineCreateInfo pipeline_info{
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
         .stageCount = 2,
-        .pStages = shaderStages,
-        .pVertexInputState = &vertexInputInfo,
-        .pInputAssemblyState = &inputAssembly,
-        .pViewportState = &viewportState,
+        .pStages = shader_stages,
+        .pVertexInputState = &vertex_input_info,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport_state,
         .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisampling,
-        .pColorBlendState = &colorBlending,
-        .layout = pipelineLayout,
-        .renderPass = renderPass,
+        .pColorBlendState = &color_blending,
+        .layout = pipeline_layout,
+        .renderPass = render_pass,
         .subpass = 0
     };
 
-    VkPipeline graphicsPipeline;
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+    VkPipeline graphics_pipeline;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &graphics_pipeline) != VK_SUCCESS) {
         spdlog::critical("failed to create graphics pipeline");
         return 1;
     }
 
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(device, frag_shader_module, nullptr);
+    vkDestroyShaderModule(device, vert_shader_module, nullptr);
 
     // Create frame buffers attached to each swapchain image
-    std::vector<VkFramebuffer> swapchainFramebuffers(imageCount);
-    for (usize i = 0; i < imageCount; i++) {
-        VkImageView attachments[] = {swapchainImageViews[i]};
-        VkFramebufferCreateInfo framebufferInfo{
+    std::vector<VkFramebuffer> swapchain_framebuffers(image_count);
+    for (usize i = 0; i < image_count; i++) {
+        VkImageView attachments[] = {swapchain_image_views[i]};
+        VkFramebufferCreateInfo framebuffer_info{
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = renderPass,
+            .renderPass = render_pass,
             .attachmentCount = 1,
             .pAttachments = attachments,
-            .width = swapchainExtent.width,
-            .height = swapchainExtent.height,
+            .width = swapchain_extent.width,
+            .height = swapchain_extent.height,
             .layers = 1
         };
 
-        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapchainFramebuffers[i]) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(device, &framebuffer_info, nullptr, &swapchain_framebuffers[i]) != VK_SUCCESS) {
             spdlog::critical("failed to create framebuffer {}", i);
             return 1;
         }
     }
 
     // Create a grapics command pool.
-    VkCommandPoolCreateInfo poolInfo{
+    VkCommandPoolCreateInfo pool_info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = graphicsFamily,
+        .queueFamilyIndex = graphics_family,
     };
 
-    VkCommandPool commandPool;
-    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+    VkCommandPool command_pool;
+    if (vkCreateCommandPool(device, &pool_info, nullptr, &command_pool) != VK_SUCCESS) {
         spdlog::critical("failed to create command pool");
         return 1;
     }
 
     // Create the vertex buffer.
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    VkBufferCreateInfo bufferInfo{
+    VkBuffer vertex_buffer;
+    VkDeviceMemory vertex_buffer_memory;
+    VkBufferCreateInfo buffer_info{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
         .size = sizeof(Vertex) * VERTICES.size(),
         .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE
     };
 
-    if (vkCreateBuffer(device, &bufferInfo, nullptr, &vertexBuffer) != VK_SUCCESS) {
+    if (vkCreateBuffer(device, &buffer_info, nullptr, &vertex_buffer) != VK_SUCCESS) {
         spdlog::critical("failed to create vertex buffer");
         return 1;
     }
 
     // Allocate memory and bind it to the buffer
-    VkMemoryRequirements memRequirements;
-    vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements);
+    VkMemoryRequirements mem_requirements;
+    vkGetBufferMemoryRequirements(device, vertex_buffer, &mem_requirements);
 
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+    VkPhysicalDeviceMemoryProperties mem_properties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device, &mem_properties);
 
     // ?????
-    u32 memoryTypeIndex = UINT32_MAX;
-    for (u32 i = 0; i < memProperties.memoryTypeCount; i++) {
-        if ((memRequirements.memoryTypeBits & (i << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
-            memoryTypeIndex = i;
+    u32 memory_type_index = UINT32_MAX;
+    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
+        if ((mem_requirements.memoryTypeBits & (i << i)) &&
+            (mem_properties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
+            memory_type_index = i;
             break;
         }
     }
-    if (memoryTypeIndex == UINT32_MAX) {
+    if (memory_type_index == UINT32_MAX) {
         spdlog::critical("failed to find suitable memory type for vertex buffer");
         return 1;
     }
 
-    VkMemoryAllocateInfo allocInfo{
+    VkMemoryAllocateInfo alloc_info{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = memRequirements.size,
-        .memoryTypeIndex = memoryTypeIndex
+        .allocationSize = mem_requirements.size,
+        .memoryTypeIndex = memory_type_index
     };
 
-    if (vkAllocateMemory(device, &allocInfo, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
+    if (vkAllocateMemory(device, &alloc_info, nullptr, &vertex_buffer_memory) != VK_SUCCESS) {
         spdlog::critical("failed to allocate vertex buffer memory");
         return 1;
     }
 
-    vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0);
+    vkBindBufferMemory(device, vertex_buffer, vertex_buffer_memory, 0);
 
     // Upload vertex data.
     void* data;
-    vkMapMemory(device, vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-    memcpy(data, VERTICES.data(), static_cast<usize>(bufferInfo.size));
-    vkUnmapMemory(device, vertexBufferMemory);
+    vkMapMemory(device, vertex_buffer_memory, 0, buffer_info.size, 0, &data);
+    memcpy(data, VERTICES.data(), static_cast<usize>(buffer_info.size));
+    vkUnmapMemory(device, vertex_buffer_memory);
 
     // Allocate a command buffer for each swapchain image.
-    std::vector<VkCommandBuffer> commandBuffers(imageCount);
-    VkCommandBufferAllocateInfo allocInfoCmd{
+    std::vector<VkCommandBuffer> command_buffers(image_count);
+    VkCommandBufferAllocateInfo alloc_info_cmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-        .commandPool = commandPool,
+        .commandPool = command_pool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = imageCount
+        .commandBufferCount = image_count
     };
 
-    if (vkAllocateCommandBuffers(device, &allocInfoCmd, commandBuffers.data()) != VK_SUCCESS) {
+    if (vkAllocateCommandBuffers(device, &alloc_info_cmd, command_buffers.data()) != VK_SUCCESS) {
         spdlog::critical("failed to allocate command buffers");
         return 1;
     }
 
-    spdlog::info("recording {} command buffers", imageCount);
-    for (usize i = 0; i < imageCount; i++) {
-        VkCommandBufferBeginInfo beginInfo{
+    spdlog::info("recording {} command buffers", image_count);
+    for (usize i = 0; i < image_count; i++) {
+        VkCommandBufferBeginInfo begin_info{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
         };
 
-        if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+        if (vkBeginCommandBuffer(command_buffers[i], &begin_info) != VK_SUCCESS) {
             spdlog::critical("failed to begin recording command buffer {}", i);
             return 1;
         }
 
-        VkClearValue clearColor = {{{0.2, 0.2, 0.2, 1}}};
+        VkClearValue clear_col = {{{0.2, 0.2, 0.2, 1}}};
 
         // Begin the render pass by clearing the image.
-        VkRenderPassBeginInfo rpBeginInfo{
+        VkRenderPassBeginInfo rp_begin_info{
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = renderPass,
-            .framebuffer = swapchainFramebuffers[i],
+            .renderPass = render_pass,
+            .framebuffer = swapchain_framebuffers[i],
             .renderArea = {
                 .offset = { 0, 0 },
-                .extent = swapchainExtent
+                .extent = swapchain_extent
             },
             .clearValueCount = 1,
-            .pClearValues = &clearColor
+            .pClearValues = &clear_col
         };
 
         // Then draw.
-        vkCmdBeginRenderPass(commandBuffers[i], &rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-        VkBuffer vertexBuffers[] = {vertexBuffer};
+        vkCmdBeginRenderPass(command_buffers[i], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+        VkBuffer vertex_bufs[] = {vertex_buffer};
         VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets);
-        vkCmdDraw(commandBuffers[i], (u32) VERTICES.size(), 1, 0, 0);
-        vkCmdEndRenderPass(commandBuffers[i]);
+        vkCmdBindVertexBuffers(command_buffers[i], 0, 1, vertex_bufs, offsets);
+        vkCmdDraw(command_buffers[i], (u32) VERTICES.size(), 1, 0, 0);
+        vkCmdEndRenderPass(command_buffers[i]);
 
-        if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+        if (vkEndCommandBuffer(command_buffers[i]) != VK_SUCCESS) {
             spdlog::critical("failed to end command buffer {}", i);
             return 1;
         }
     }
 
-    std::vector<VkSemaphore> imageAvailableSemaphores(imageCount);
-    std::vector<VkSemaphore> renderFinishedSemaphores(imageCount);
-    std::vector<VkFence> inFlightFences(imageCount);
-    VkSemaphoreCreateInfo semaphoreInfo{
+    std::vector<VkSemaphore> image_available_semaphores(image_count);
+    std::vector<VkSemaphore> render_finished_semaphores(image_count);
+    std::vector<VkFence> in_flight_fences(image_count);
+    VkSemaphoreCreateInfo semaphore_info{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
     };
-    VkFenceCreateInfo fenceInfo{
+    VkFenceCreateInfo fence_info{
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
 
-    for (usize i = 0; i < imageCount; i++) {
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS) {
+    for (usize i = 0; i < image_count; i++) {
+        if (vkCreateSemaphore(device, &semaphore_info, nullptr, &image_available_semaphores[i]) != VK_SUCCESS) {
             spdlog::critical("failed to create image available semaphore");
             return 1;
         }
 
-        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS) {
+        if (vkCreateSemaphore(device, &semaphore_info, nullptr, &render_finished_semaphores[i]) != VK_SUCCESS) {
             spdlog::critical("failed to create render finished semaphore");
             return 1;
         }
 
-        if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+        if (vkCreateFence(device, &fence_info, nullptr, &in_flight_fences[i]) != VK_SUCCESS) {
             spdlog::critical("failed to create in flight fence");
             return 1;
         }
@@ -656,7 +652,7 @@ int main(int argc, char** argv) {
 
     spdlog::info("Showing window");
 
-    u32 currentFrame = 0;
+    u32 current_frame = 0;
 
     bool quit = false;
 
@@ -678,60 +674,60 @@ int main(int argc, char** argv) {
             }
         }
 
-        VkSemaphore imageAvailableSemaphore = imageAvailableSemaphores[currentFrame];
-        VkFence inFlightFence = inFlightFences[currentFrame];
+        VkSemaphore image_available_semaphore = image_available_semaphores[current_frame];
+        VkFence in_flight_fence = in_flight_fences[current_frame];
 
-        vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
-        vkResetFences(device, 1, &inFlightFence);
+        vkWaitForFences(device, 1, &in_flight_fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(device, 1, &in_flight_fence);
 
-        u32 imageIndex;
-        VkResult acquireResult = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
-        if (acquireResult != VK_SUCCESS && acquireResult != VK_SUBOPTIMAL_KHR) {
-            spdlog::error("failed to acquire next image: {}", (int)acquireResult);
+        u32 image_index;
+        VkResult acquire_result = vkAcquireNextImageKHR(device, swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &image_index);
+        if (acquire_result != VK_SUCCESS && acquire_result != VK_SUBOPTIMAL_KHR) {
+            spdlog::error("failed to acquire next image: {}", (int)acquire_result);
             quit = true;
             continue;
         }
 
-        VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores[imageIndex]};
+        VkSemaphore wait_semaphores[] = {image_available_semaphore};
+        VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        VkSemaphore signal_semaphores[] = {render_finished_semaphores[image_index]};
 
         // Submit the command buffer that we already recorded.
-        VkSubmitInfo submitInfo{
+        VkSubmitInfo submit_info{
             .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = waitSemaphores,
-            .pWaitDstStageMask = waitStages,
+            .pWaitSemaphores = wait_semaphores,
+            .pWaitDstStageMask = wait_stages,
             .commandBufferCount = 1,
-            .pCommandBuffers = &commandBuffers[imageIndex],
+            .pCommandBuffers = &command_buffers[image_index],
             .signalSemaphoreCount = 1,
-            .pSignalSemaphores = signalSemaphores
+            .pSignalSemaphores = signal_semaphores
         };
 
-        VkResult submitResult = vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence);
-        if (submitResult != VK_SUCCESS) {
-            spdlog::error("failed to submit draw command buffer for {}: {}", imageIndex, (int)submitResult);
+        VkResult submit_result = vkQueueSubmit(graphics_queue, 1, &submit_info, in_flight_fence);
+        if (submit_result != VK_SUCCESS) {
+            spdlog::error("failed to submit draw command buffer for {}: {}", image_index, (int)submit_result);
             quit = true;
             continue;
         }
 
-        VkPresentInfoKHR presentInfo{
+        VkPresentInfoKHR present_info{
             .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
             .waitSemaphoreCount = 1,
-            .pWaitSemaphores = signalSemaphores,
+            .pWaitSemaphores = signal_semaphores,
             .swapchainCount = 1,
             .pSwapchains = &swapchain,
-            .pImageIndices = &imageIndex
+            .pImageIndices = &image_index
         };
 
-        VkResult presentResult = vkQueuePresentKHR(presentQueue, &presentInfo);
-        if (presentResult != VK_SUCCESS && presentResult != VK_SUBOPTIMAL_KHR) {
-            spdlog::error("failed to present image {}: {}", imageIndex, (int)presentResult);
+        VkResult present_result = vkQueuePresentKHR(present_queue, &present_info);
+        if (present_result != VK_SUCCESS && present_result != VK_SUBOPTIMAL_KHR) {
+            spdlog::error("failed to present image {}: {}", image_index, (int)present_result);
             quit = true;
             continue;
         }
 
-        currentFrame = (currentFrame + 1) % imageCount;
+        current_frame = (current_frame + 1) % image_count;
 
         // 60 fps limit so as to not nuke the CPU (TODO: vsync?)
         std::this_thread::sleep_for(16ms);
