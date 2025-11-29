@@ -529,26 +529,12 @@ private:
             .primitiveRestartEnable = VK_FALSE
         };
 
-        VkViewport viewport{
-            .x = 0,
-            .y = 0,
-            .width = (float) m_swapchain_extent.width,
-            .height = (float) m_swapchain_extent.height,
-            .minDepth = 0,
-            .maxDepth = 0
-        };
-
-        VkRect2D scissor{
-            .offset = { 0, 0 },
-            .extent = m_swapchain_extent
-        };
-
         VkPipelineViewportStateCreateInfo viewport_state{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
-            .pViewports = &viewport,
+            .pViewports = nullptr,  // Viewport is dynamic
             .scissorCount = 1,
-            .pScissors = &scissor
+            .pScissors = nullptr,   // Scissor is dynamic
         };
 
         VkPipelineRasterizationStateCreateInfo rasterizer{
@@ -582,6 +568,17 @@ private:
             .pAttachments = &color_blend_attachments
         };
 
+        VkDynamicState dynamic_state[] = { 
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+
+        VkPipelineDynamicStateCreateInfo dynamic_state_info{
+            .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = 2,
+            .pDynamicStates = dynamic_state
+        };
+
         VkPipelineLayoutCreateInfo pipeline_layout_info{
             .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
         };
@@ -602,6 +599,7 @@ private:
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
             .pColorBlendState = &color_blending,
+            .pDynamicState = &dynamic_state_info,
             .layout = pipeline_layout,
             .renderPass = m_render_pass,
             .subpass = 0
@@ -714,9 +712,26 @@ private:
                 .pClearValues = &clear_col
             };
 
+            // Set viewport and scissor, which are dynamic.
+            VkViewport viewport{
+                .x = 0,
+                .y = 0,
+                .width = (f32) m_swapchain_extent.width,
+                .height = (f32) m_swapchain_extent.height,
+                .minDepth = 0,
+                .maxDepth = 0
+            };
+
+            VkRect2D scissor{
+                .offset = { 0, 0 },
+                .extent = m_swapchain_extent
+            };
+
             // Then draw.
             vkCmdBeginRenderPass(m_command_buffers[i], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(m_command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphics_pipeline);
+            vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
+            vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
             VkBuffer vertex_bufs[] = { m_vertex_buffer };
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, vertex_bufs, offsets);
@@ -775,13 +790,11 @@ private:
         for (const auto view : m_swapchain_image_views) {
             vkDestroyImageView(m_device, view, nullptr);
         }
-        // We have to destroy the graphics pipeline and reload shaders... embarrassing
-        vkDestroyPipeline(m_device, m_graphics_pipeline, nullptr);
         for (const auto framebuffer : m_swapchain_framebuffers) {
             vkDestroyFramebuffer(m_device, framebuffer, nullptr);
         }
         vkFreeCommandBuffers(m_device, m_command_pool, (u32) m_command_buffers.size(), m_command_buffers.data()); 
-        // TODO: Do we need to destroy sync objects? I cant figure these fuckers out!
+        // TODO: Do we need to destroy sync objects?
         for (const auto semaphore : m_image_available_semaphores) {
             vkDestroySemaphore(m_device, semaphore, nullptr);
         }
@@ -805,7 +818,6 @@ private:
         // TODO: handle errors somehow. just nuke everything if resize fails ig
         create_swapchain();
         create_framebuffers();
-        create_graphics_pipeline();
         create_command_buffers();
         create_sync_objects();
         
