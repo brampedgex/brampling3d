@@ -63,41 +63,42 @@ public:
 
         SDL_ShowWindow(m_window);
 
+        spdlog::info("startup complete");
         return true;
     }
 
     void run() {
-        bool quit = false;
+        bool should_quit = false;
 
-        while (!quit) {
+        while (!should_quit) {
             // Poll window events before rendering. (why is this not bound to the window?)
             SDL_Event event;
             while (SDL_PollEvent(&event)) {
                 switch (event.type) {
                 case SDL_EVENT_QUIT:
-                    quit = true;
+                    should_quit = true;
                     break;
                 case SDL_EVENT_KEY_DOWN:
                     if (event.key.key == SDLK_Q) {
-                        quit = true;
+                        should_quit = true;
                     }
                     break;
                 case SDL_EVENT_WINDOW_RESIZED: {
                     auto& window_event = event.window;
                     spdlog::info("window resized: {} {}", window_event.data1, window_event.data2);
+
+                    m_window_resized = true;
                 } break;
                 default:
                     break;
                 }
             }
 
-            render_frame();
-
-            // 60 fps limit so as to not nuke the CPU (TODO: vsync?)
-            std::this_thread::sleep_for(16ms);
+            update_graphics();
         }
 
         spdlog::info("quitting");
+        quit();
     }
 
 private:
@@ -114,6 +115,10 @@ private:
         return true;
     }
 
+    void quit() {
+        SDL_Quit();
+    }
+
     bool init_graphics() {
         if (!create_vk_instance())
             return false;
@@ -126,6 +131,8 @@ private:
         if (!create_swapchain())
             return false;
         if (!create_render_pass())
+            return false;
+        if (!create_framebuffers())
             return false;
         if (!create_graphics_pipeline())
             return false;
@@ -156,7 +163,7 @@ private:
         }
 
         // ApplicationInfo lets drivers enable application-specific optimizations.
-        // So Intel, NVIDIA, and AMD can implement the best optimizations for brampling3D.
+        // So Intel, NVIDIA, and AMD can implement the best optimizations for brampling3D
         VkApplicationInfo app_info{
             .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
             .pApplicationName = "brampling3D",
@@ -428,6 +435,10 @@ private:
             return false;
         }
 
+        return true;
+    }
+
+    bool create_framebuffers() {
         // Create framebuffers for the render pass for each swapchain image.
         for (const auto [i, image_view] : m_swapchain_image_views | std::views::enumerate) {
             VkImageView attachments[] = { image_view };
@@ -753,7 +764,62 @@ private:
 
         return true;
     }
+
+    void recreate_swapchain() {
+        // Wait for the device to be idle before recreating the swapchain
+        vkDeviceWaitIdle(m_device);
+
+        // Cleanup...
+        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+        for (const auto view : m_swapchain_image_views) {
+            vkDestroyImageView(m_device, view, nullptr);
+        }
+        // We have to destroy the graphics pipeline and reload shaders... embarrassing
+        vkDestroyPipeline(m_device, m_graphics_pipeline, nullptr);
+        for (const auto framebuffer : m_swapchain_framebuffers) {
+            vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+        }
+        vkFreeCommandBuffers(m_device, m_command_pool, (u32) m_command_buffers.size(), m_command_buffers.data()); 
+        // TODO: Do we need to destroy sync objects? I cant figure these fuckers out!
+        for (const auto semaphore : m_image_available_semaphores) {
+            vkDestroySemaphore(m_device, semaphore, nullptr);
+        }
+        for (const auto semaphore : m_render_finished_semaphores) {
+            vkDestroySemaphore(m_device, semaphore, nullptr);
+        }
+        for (const auto fence : m_in_flight_fences) {
+            vkDestroyFence(m_device, fence, nullptr);
+        }
+
+        m_swapchain_images.clear();
+        m_swapchain_image_views.clear();
+        m_swapchain_framebuffers.clear();
+        m_command_buffers.clear();
+        m_image_available_semaphores.clear();
+        m_render_finished_semaphores.clear();
+        m_in_flight_fences.clear();
+
+        // Now recreate everything.
+        
+        // TODO: handle errors somehow. just nuke everything if resize fails ig
+        create_swapchain();
+        create_framebuffers();
+        create_graphics_pipeline();
+        create_command_buffers();
+        create_sync_objects();
+    }
     
+    void update_graphics() {
+        // Handle swapchain recreation before rendering a frame.
+        if (m_window_resized || m_need_swapchain_recreate) {
+            m_window_resized = m_need_swapchain_recreate = false;
+
+            recreate_swapchain();
+        }
+
+        render_frame();
+    }
+
     void render_frame() {
         VkSemaphore image_available_semaphore = m_image_available_semaphores[m_current_frame];
         VkFence in_flight_fence = m_in_flight_fences[m_current_frame];
@@ -763,6 +829,12 @@ private:
 
         u32 image_index;
         VkResult acquire_result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &image_index);
+
+        if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
+            m_need_swapchain_recreate = true;
+            return;
+        }
+        
         if (acquire_result != VK_SUCCESS && acquire_result != VK_SUBOPTIMAL_KHR) {
             spdlog::error("failed to acquire next image: {}", (int)acquire_result);
             return;
@@ -843,6 +915,8 @@ private:
     std::vector<VkFence> m_in_flight_fences;
 
     usize m_current_frame = 0;
+    bool m_window_resized = false;
+    bool m_need_swapchain_recreate = false;
 };
 
 int main(int argc, char** argv) {
