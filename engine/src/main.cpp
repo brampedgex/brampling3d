@@ -809,9 +809,10 @@ private:
         create_command_buffers();
         create_sync_objects();
         
+        // This fixes issues with synchronization. I have no idea why. Thank you random stackoverflow commenter!
         m_current_frame = 0;
 
-        spdlog::info("finished window resize");
+        spdlog::info("finished swapchain recreate");
     }
     
     void update_graphics() {
@@ -820,8 +821,6 @@ private:
             m_window_resized = m_need_swapchain_recreate = false;
 
             recreate_swapchain();
-
-            spdlog::info("recreated swapchain");
         }
 
         render_frame();
@@ -844,13 +843,10 @@ private:
         } else if (acquire_result == VK_SUBOPTIMAL_KHR) {
             // Suboptimal means we can render this frame, but we should still recreate the swapchain after.
             m_need_swapchain_recreate = true;
-            spdlog::info("acquire_result for image {} returned VK_SUBOPTIMAL_KHR, recreating swapchain on the next frame", image_index);
         } else if (acquire_result != VK_SUCCESS) {
             spdlog::error("failed to acquire next image: {}", string_VkResult(acquire_result));
             return;
         }
-
-        spdlog::info("acquired swapchain image {}", image_index);
 
         VkSemaphore wait_semaphores[] = {image_available_semaphore};
         VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -886,7 +882,7 @@ private:
         VkResult present_result = vkQueuePresentKHR(m_present_queue, &present_info);
 
         if (present_result == VK_SUBOPTIMAL_KHR || present_result == VK_ERROR_OUT_OF_DATE_KHR) {
-            spdlog::info("present_result for image {} is VK_SUBOPTIMAL_KHR", image_index);
+            // Recreate swapchain next frame. We usually get this right before SDL sends a resize event anyway
             m_need_swapchain_recreate = true;
         } else if (present_result != VK_SUCCESS) {
             spdlog::error("failed to present image {}: {}", image_index, (int)present_result);
