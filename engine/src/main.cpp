@@ -55,10 +55,10 @@ public:
         if (!sdl3_init())
             return false;
 
-        if (!initWindow())
+        if (!init_window())
             return false;
 
-        if (!initGraphics())
+        if (!init_graphics())
             return false;
 
         SDL_ShowWindow(m_window);
@@ -67,7 +67,6 @@ public:
     }
 
     void run() {
-        usize current_frame = 0;
         bool quit = false;
 
         while (!quit) {
@@ -83,65 +82,16 @@ public:
                         quit = true;
                     }
                     break;
+                case SDL_EVENT_WINDOW_RESIZED: {
+                    auto& window_event = event.window;
+                    spdlog::info("window resized: {} {}", window_event.data1, window_event.data2);
+                } break;
                 default:
                     break;
                 }
             }
 
-            VkSemaphore image_available_semaphore = m_image_available_semaphores[current_frame];
-            VkFence in_flight_fence = m_in_flight_fences[current_frame];
-
-            vkWaitForFences(m_device, 1, &in_flight_fence, VK_TRUE, UINT64_MAX);
-            vkResetFences(m_device, 1, &in_flight_fence);
-
-            u32 image_index;
-            VkResult acquire_result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &image_index);
-            if (acquire_result != VK_SUCCESS && acquire_result != VK_SUBOPTIMAL_KHR) {
-                spdlog::error("failed to acquire next image: {}", (int)acquire_result);
-                quit = true;
-                continue;
-            }
-
-            VkSemaphore wait_semaphores[] = {image_available_semaphore};
-            VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-            VkSemaphore signal_semaphores[] = {m_render_finished_semaphores[image_index]};
-
-            // Submit the command buffer that we already recorded.
-            VkSubmitInfo submit_info{
-                .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = wait_semaphores,
-                .pWaitDstStageMask = wait_stages,
-                .commandBufferCount = 1,
-                .pCommandBuffers = &m_command_buffers[image_index],
-                .signalSemaphoreCount = 1,
-                .pSignalSemaphores = signal_semaphores
-            };
-
-            VkResult submit_result = vkQueueSubmit(m_graphics_queue, 1, &submit_info, in_flight_fence);
-            if (submit_result != VK_SUCCESS) {
-                spdlog::error("failed to submit draw command buffer for {}: {}", image_index, (int)submit_result);
-                quit = true;
-                continue;
-            }
-
-            VkPresentInfoKHR present_info{
-                .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-                .waitSemaphoreCount = 1,
-                .pWaitSemaphores = signal_semaphores,
-                .swapchainCount = 1,
-                .pSwapchains = &m_swapchain,
-                .pImageIndices = &image_index
-            };
-
-            VkResult present_result = vkQueuePresentKHR(m_present_queue, &present_info);
-            if (present_result != VK_SUCCESS && present_result != VK_SUBOPTIMAL_KHR) {
-                spdlog::error("failed to present image {}: {}", image_index, (int)present_result);
-                quit = true;
-                continue;
-            }
-
-            current_frame = (current_frame + 1) % m_swapchain_images.size();
+            render_frame();
 
             // 60 fps limit so as to not nuke the CPU (TODO: vsync?)
             std::this_thread::sleep_for(16ms);
@@ -151,46 +101,46 @@ public:
     }
 
 private:
-    bool initWindow() {
+    bool init_window() {
         if ((m_window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
             sdl3_perror("Failed to create window");
             return false;
         }
 
-        // SDL_SetWindowResizable(m_window, true);
+        SDL_SetWindowResizable(m_window, true);
         SDL_SetWindowMinimumSize(m_window, 640, 480);
 
         spdlog::info("Window initialized");
         return true;
     }
 
-    bool initGraphics() {
-        if (!createVkInstance())
+    bool init_graphics() {
+        if (!create_vk_instance())
             return false;
-        if (!createVkSurface())
+        if (!create_window_surface())
             return false;
-        if (!findPhysicalDevice())
+        if (!find_physical_device())
             return false;
-        if (!createDevice())
+        if (!create_device())
             return false;
-        if (!createSwapchain())
+        if (!create_swapchain())
             return false;
-        if (!createRenderPass())
+        if (!create_render_pass())
             return false;
-        if (!createGraphicsPipeline())
+        if (!create_graphics_pipeline())
             return false;
-        if (!createVertexBuffer())
+        if (!create_vertex_buffer())
             return false;
-        if (!createCommandBuffers())
+        if (!create_command_buffers())
             return false;
-        if (!createSyncObjects())
+        if (!create_sync_objects())
             return false;
 
         spdlog::info("Vulkan initialized");
         return true;
     }
 
-    bool createVkInstance() {
+    bool create_vk_instance() {
         // Load Vulkan entry points
         if (volkInitialize() != VK_SUCCESS) {
             spdlog::error("Failed to load Vulkan");
@@ -236,7 +186,7 @@ private:
         return true;
     }
 
-    bool createVkSurface() {
+    bool create_window_surface() {
         if (!SDL_Vulkan_CreateSurface(m_window, m_vk_instance, nullptr, &m_window_surface)) {
             sdl3_perror("Failed to create vulkan surface");
             return false;
@@ -245,7 +195,7 @@ private:
         return true;
     }
 
-    bool findPhysicalDevice() {
+    bool find_physical_device() {
         u32 device_count;
         vkEnumeratePhysicalDevices(m_vk_instance, &device_count, nullptr);
         if (device_count == 0) {
@@ -299,7 +249,7 @@ private:
         return true;
     }
 
-    bool createDevice() {
+    bool create_device() {
         f32 queue_priority = 1;
         std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
         queue_create_infos.push_back({
@@ -355,7 +305,7 @@ private:
         return true;
     }
 
-    bool createSwapchain() {
+    bool create_swapchain() {
         VkSurfaceCapabilitiesKHR capabilities;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device, m_window_surface, &capabilities);
 
@@ -442,7 +392,7 @@ private:
         return true;
     }
 
-    bool createRenderPass() {
+    bool create_render_pass() {
         VkAttachmentDescription color_attachment{
             .format = m_surface_format.format,
             .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -503,7 +453,7 @@ private:
         return true;
     }
 
-    bool createGraphicsPipeline() {
+    bool create_graphics_pipeline() {
         std::vector<u8> vert_shader(_binary_shader_vert_spv_start, _binary_shader_vert_spv_end);
         std::vector<u8> frag_shader(_binary_shader_frag_spv_start, _binary_shader_frag_spv_end);
 
@@ -655,7 +605,7 @@ private:
         return true;
     }
 
-    bool createVertexBuffer() {
+    bool create_vertex_buffer() {
         VkBufferCreateInfo buffer_info{
             .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
             .size = sizeof(Vertex) * VERTICES.size(),
@@ -711,7 +661,7 @@ private:
         return true;
     }
 
-    bool createCommandBuffers() {
+    bool create_command_buffers() {
         // Allocate a command buffer for each swapchain image.
         m_command_buffers.resize(m_swapchain_images.size());
         
@@ -770,7 +720,7 @@ private:
         return true;
     }
 
-    bool createSyncObjects() {
+    bool create_sync_objects() {
         usize image_count = m_swapchain_images.size();
         m_image_available_semaphores.resize(image_count);
         m_render_finished_semaphores.resize(image_count);
@@ -803,6 +753,61 @@ private:
 
         return true;
     }
+    
+    void render_frame() {
+        VkSemaphore image_available_semaphore = m_image_available_semaphores[m_current_frame];
+        VkFence in_flight_fence = m_in_flight_fences[m_current_frame];
+
+        vkWaitForFences(m_device, 1, &in_flight_fence, VK_TRUE, UINT64_MAX);
+        vkResetFences(m_device, 1, &in_flight_fence);
+
+        u32 image_index;
+        VkResult acquire_result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &image_index);
+        if (acquire_result != VK_SUCCESS && acquire_result != VK_SUBOPTIMAL_KHR) {
+            spdlog::error("failed to acquire next image: {}", (int)acquire_result);
+            return;
+        }
+
+        VkSemaphore wait_semaphores[] = {image_available_semaphore};
+        VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        VkSemaphore signal_semaphores[] = {m_render_finished_semaphores[image_index]};
+
+        // Submit the command buffer that we already recorded.
+        VkSubmitInfo submit_info{
+            .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = wait_semaphores,
+            .pWaitDstStageMask = wait_stages,
+            .commandBufferCount = 1,
+            .pCommandBuffers = &m_command_buffers[image_index],
+            .signalSemaphoreCount = 1,
+            .pSignalSemaphores = signal_semaphores
+        };
+
+        VkResult submit_result = vkQueueSubmit(m_graphics_queue, 1, &submit_info, in_flight_fence);
+        if (submit_result != VK_SUCCESS) {
+            spdlog::error("failed to submit draw command buffer for {}: {}", image_index, (int)submit_result);
+            return;
+        }
+
+        VkPresentInfoKHR present_info{
+            .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+            .waitSemaphoreCount = 1,
+            .pWaitSemaphores = signal_semaphores,
+            .swapchainCount = 1,
+            .pSwapchains = &m_swapchain,
+            .pImageIndices = &image_index
+        };
+
+        VkResult present_result = vkQueuePresentKHR(m_present_queue, &present_info);
+        if (present_result != VK_SUCCESS && present_result != VK_SUBOPTIMAL_KHR) {
+            spdlog::error("failed to present image {}: {}", image_index, (int)present_result);
+            return;
+        }
+
+        m_current_frame = (m_current_frame + 1) % m_swapchain_images.size();
+    }
+
 
 private:
     SDL_Window* m_window{};
@@ -836,13 +841,15 @@ private:
     std::vector<VkSemaphore> m_image_available_semaphores;
     std::vector<VkSemaphore> m_render_finished_semaphores;
     std::vector<VkFence> m_in_flight_fences;
+
+    usize m_current_frame = 0;
 };
 
 int main(int argc, char** argv) {
     Engine engine;
     
     if (!engine.start()) {
-        spdlog::critical("failed to start up!");
+        spdlog::critical("startup failed!");
         return 1;
     }
 
