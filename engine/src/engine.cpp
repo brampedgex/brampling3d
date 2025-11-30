@@ -48,6 +48,8 @@ bool Engine::start() {
     if (!init_window())
         return false;
 
+    m_gfx_manager = std::make_unique<GraphicsManager>(m_window);
+
     if (!init_graphics())
         return false;
 

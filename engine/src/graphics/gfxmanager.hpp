@@ -1,47 +1,25 @@
 #pragma once
 
-#include "vulkan.hpp"
-#include "sdl3.hpp"
+#include "../sdl3.hpp"
+#include "../vulkan.hpp"
 
-#include "graphics/gfxmanager.hpp"
-
-class Engine {
+class GraphicsManager {
 public:
-    /// Initialize SDL and Vulkan
-    bool start();
+    explicit GraphicsManager(SDL_Window* window) : m_window(window) {}
 
-    /// Run the main event loop.
-    void run();
+    /// Initializes Vulkan and prepares to present to the game window.
+    bool initialize();
 
-private:
-    void quit();
+    /// Renders a frame.
+    void update();
 
-    bool init_window();
-
-    bool init_graphics();
-
-    bool create_vk_instance();
-    bool create_window_surface();
-    bool find_physical_device();
-    bool create_device();
-    bool create_swapchain();
-    bool create_render_pass();
-    bool create_framebuffers();
-    bool create_graphics_pipeline();
-    bool create_vertex_buffer();
-    bool create_command_buffers();
-    bool create_sync_objects();
-
-    void recreate_swapchain();   
-
-    void update_graphics();
-
-    void render_frame();
+    /// Notify the manager that the window has resized.
+    void window_resized() {
+        m_window_resized = true;
+    }
 
 private:
-    SDL_Window* m_window{};
-
-    std::unique_ptr<GraphicsManager> m_gfx_manager{};
+    SDL_Window* m_window; // Window is owned by Engine
 
     VkInstance m_vk_instance;
     VkSurfaceKHR m_window_surface;
@@ -74,6 +52,6 @@ private:
     std::vector<VkFence> m_in_flight_fences;
 
     usize m_current_frame = 0;
-    bool m_window_resized = false;
     bool m_need_swapchain_recreate = false;
+    bool m_window_resized = false;
 };
