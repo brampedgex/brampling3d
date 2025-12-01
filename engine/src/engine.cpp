@@ -568,8 +568,6 @@ bool Engine::create_vertex_buffer() {
 
 bool Engine::create_command_buffers() {
     // Allocate a command buffer for each swapchain image.
-    m_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-    
     VkCommandBufferAllocateInfo alloc_info_cmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = m_command_pool,
@@ -593,9 +591,6 @@ bool Engine::create_sync_objects() {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
-
-    m_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_image_available_semaphores[i]) != VK_SUCCESS) {

@@ -60,10 +60,10 @@ private:
     VkBuffer m_vertex_buffer;
     VkDeviceMemory m_vertex_buffer_memory;
 
-    std::vector<VkCommandBuffer> m_command_buffers;
+    std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> m_command_buffers;
     
-    std::vector<VkSemaphore> m_image_available_semaphores;
-    std::vector<VkFence> m_in_flight_fences;
+    std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_image_available_semaphores;
+    std::array<VkFence, MAX_FRAMES_IN_FLIGHT> m_in_flight_fences;
 
     usize m_current_frame = 0;
     bool m_window_resized = false;
