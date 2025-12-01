@@ -26,6 +26,8 @@ public:     // Getters
     const auto& extent() const { return m_extent; }
 
     usize image_count() const { return m_images.size(); } 
+
+    auto submit_semaphore(usize index) const { return m_submit_semaphores[index]; }
     
     const auto& framebuffers() const { return m_framebuffers; }
     auto framebuffer(usize index) const { return m_framebuffers[index]; }
@@ -43,6 +45,7 @@ private:
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_image_views;
     std::vector<VkFramebuffer> m_framebuffers;
+    std::vector<VkSemaphore> m_submit_semaphores;
     
     VkSurfaceFormatKHR m_surface_format;
     VkExtent2D m_extent;

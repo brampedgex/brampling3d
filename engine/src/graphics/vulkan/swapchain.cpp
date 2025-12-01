@@ -120,6 +120,21 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
         m_framebuffers.push_back(framebuffer);
     }
 
+    // Submit semaphores are managed in this class, because they need to be indexed by the image index instead of the current frame.
+    // https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
+    m_submit_semaphores.resize(image_count);
+
+    VkSemaphoreCreateInfo semaphore_info{
+        .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
+    };
+
+    for (usize i = 0; i < image_count; i++) {
+        if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_submit_semaphores[i]) != VK_SUCCESS) {
+            spdlog::error("failed to create submit semaphore {}", i);
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -160,8 +175,12 @@ void VulkanSwapchain::cleanup() {
     for (const auto framebuffer : m_framebuffers) {
         vkDestroyFramebuffer(m_device, framebuffer, nullptr);
     }
+    for (const auto semaphore : m_submit_semaphores) {
+        vkDestroySemaphore(m_device, semaphore, nullptr);
+    }
 
     m_images.clear();
     m_image_views.clear();
     m_framebuffers.clear();
+    m_submit_semaphores.clear();
 }

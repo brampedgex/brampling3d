@@ -106,6 +106,7 @@ bool Engine::init_window() {
 
 void Engine::quit() {
     // Destroy Vulkan resources before destroying the window, which will rug-pull our resources and make the destructors explode instead.
+    vkDeviceWaitIdle(m_device);
     m_swapchain.reset();
 
     SDL_Quit();
@@ -585,11 +586,6 @@ bool Engine::create_command_buffers() {
 }
 
 bool Engine::create_sync_objects() {
-    usize image_count = m_swapchain->image_count();
-    m_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
-    m_submit_semaphores.resize(m_swapchain->image_count());
-
     VkSemaphoreCreateInfo semaphore_info{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
     };
@@ -597,6 +593,9 @@ bool Engine::create_sync_objects() {
         .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
         .flags = VK_FENCE_CREATE_SIGNALED_BIT
     };
+
+    m_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_image_available_semaphores[i]) != VK_SUCCESS) {
@@ -610,13 +609,6 @@ bool Engine::create_sync_objects() {
         }
     }
 
-    for (usize i = 0; i < image_count; i++) {
-        if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_submit_semaphores[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create render finished semaphore");
-            return false;
-        }
-    }
-
     return true;
 }
 
@@ -625,31 +617,9 @@ void Engine::recreate_swapchain() {
     vkDeviceWaitIdle(m_device);
 
     m_swapchain->reset();
-
-    // Cleanup...
-    // TODO: Do we need to destroy sync objects?
-    for (const auto semaphore : m_image_available_semaphores) {
-        vkDestroySemaphore(m_device, semaphore, nullptr);
-    }
-    for (const auto semaphore : m_submit_semaphores) {
-        vkDestroySemaphore(m_device, semaphore, nullptr);
-    }
-    for (const auto fence : m_in_flight_fences) {
-        vkDestroyFence(m_device, fence, nullptr);
-    }
-
-    m_image_available_semaphores.clear();
-    m_submit_semaphores.clear();
-    m_in_flight_fences.clear();
-
-    // Now recreate everything.
-    
-    // TODO: handle errors somehow. just nuke everything if resize fails ig
+    // TODO: recreate render pass if the surface format changed
+    // TODO: handle errors. just nuke everything if resize fails ig
     create_swapchain();
-    create_sync_objects();
-    
-    // This fixes issues with synchronization. I have no idea why. Thank you random stackoverflow commenter!
-    m_current_frame = 0;
 
     spdlog::info("finished swapchain recreate");
 }
@@ -746,7 +716,7 @@ void Engine::render_frame() {
 
     VkSemaphore wait_semaphores[] = {image_available_semaphore};
     VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signal_semaphores[] = {m_submit_semaphores[image_index]};
+    VkSemaphore signal_semaphores[] = { m_swapchain->submit_semaphore(image_index) };
 
     // Submit the command buffer that we already recorded.
     VkSubmitInfo submit_info{

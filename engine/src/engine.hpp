@@ -64,7 +64,6 @@ private:
     
     std::vector<VkSemaphore> m_image_available_semaphores;
     std::vector<VkFence> m_in_flight_fences;
-    std::vector<VkSemaphore> m_submit_semaphores;
 
     usize m_current_frame = 0;
     bool m_window_resized = false;
