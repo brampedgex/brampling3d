@@ -2,8 +2,7 @@
 
 #include "vulkan.hpp"
 #include "sdl3.hpp"
-
-#include "graphics/gfxmanager.hpp"
+#include "graphics/vulkan/swapchain.hpp"
 
 class Engine {
 public:
@@ -24,9 +23,8 @@ private:
     bool create_window_surface();
     bool find_physical_device();
     bool create_device();
-    bool create_swapchain();
     bool create_render_pass();
-    bool create_framebuffers();
+    bool create_swapchain();
     bool create_graphics_pipeline();
     bool create_vertex_buffer();
     bool create_command_buffers();
@@ -41,8 +39,6 @@ private:
 private:
     SDL_Window* m_window{};
 
-    std::unique_ptr<GraphicsManager> m_gfx_manager{};
-
     VkInstance m_vk_instance;
     VkSurfaceKHR m_window_surface;
     
@@ -54,15 +50,10 @@ private:
     VkQueue m_graphics_queue, m_present_queue;
     VkCommandPool m_command_pool;
 
-    VkSwapchainKHR m_swapchain;
-    std::vector<VkImage> m_swapchain_images;
-    std::vector<VkImageView> m_swapchain_image_views;
-    VkSurfaceFormatKHR m_surface_format;
-    VkExtent2D m_swapchain_extent;
-
     VkRenderPass m_render_pass;
     VkPipeline m_graphics_pipeline;
-    std::vector<VkFramebuffer> m_swapchain_framebuffers;
+
+    std::unique_ptr<VulkanSwapchain> m_swapchain;
 
     VkBuffer m_vertex_buffer;
     VkDeviceMemory m_vertex_buffer_memory;

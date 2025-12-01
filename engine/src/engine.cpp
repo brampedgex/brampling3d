@@ -48,8 +48,6 @@ bool Engine::start() {
     if (!init_window())
         return false;
 
-    m_gfx_manager = std::make_unique<GraphicsManager>(m_window);
-
     if (!init_graphics())
         return false;
 
@@ -113,24 +111,33 @@ void Engine::quit() {
 bool Engine::init_graphics() {
     if (!create_vk_instance())
         return false;
+    
     if (!create_window_surface())
         return false;
+    
     if (!find_physical_device())
         return false;
+
     if (!create_device())
         return false;
-    if (!create_swapchain())
-        return false;
+
+    m_swapchain = std::make_unique<VulkanSwapchain>(m_physical_device, m_device, m_window_surface);
+
     if (!create_render_pass())
         return false;
-    if (!create_framebuffers())
+
+    if (!create_swapchain())
         return false;
+
     if (!create_graphics_pipeline())
         return false;
+
     if (!create_vertex_buffer())
         return false;
+
     if (!create_command_buffers())
         return false;
+
     if (!create_sync_objects())
         return false;
 
@@ -303,96 +310,9 @@ bool Engine::create_device() {
     return true;
 }
 
-bool Engine::create_swapchain() {
-    VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device, m_window_surface, &capabilities);
-
-    u32 format_count;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(m_physical_device, m_window_surface, &format_count, nullptr);
-    std::vector<VkSurfaceFormatKHR> surface_formats(format_count);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(m_physical_device, m_window_surface, &format_count, surface_formats.data());
-    
-    // Choose a surface format.
-    VkSurfaceFormatKHR surface_format = surface_formats[0];
-    for (const auto& format : surface_formats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            surface_format = format;
-            break;
-        }
-    }
-    m_surface_format = surface_format;
-
-    VkExtent2D swapchain_extent = capabilities.currentExtent;
-    if (swapchain_extent.width == UINT32_MAX) {
-        int width, height;
-        SDL_GetWindowSizeInPixels(m_window, &width, &height);
-        swapchain_extent.width = (u32) width;
-        swapchain_extent.height = (u32) height;
-    }
-    m_swapchain_extent = swapchain_extent;
-
-    VkSwapchainCreateInfoKHR swapchain_create_info{
-        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-        .surface = m_window_surface,
-        .minImageCount = capabilities.minImageCount,
-        .imageFormat = surface_format.format,
-        .imageColorSpace = surface_format.colorSpace,
-        .imageExtent = swapchain_extent,
-        .imageArrayLayers = 1,
-        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .preTransform = capabilities.currentTransform,
-        .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
-        .clipped = VK_TRUE
-    };
-    
-    if (vkCreateSwapchainKHR(m_device, &swapchain_create_info, nullptr, &m_swapchain) != VK_SUCCESS) {
-        spdlog::error("Failed to create swapchain");
-        return false;
-    }
-
-    // Create views for each swapchain image
-    u32 image_count;
-    vkGetSwapchainImagesKHR(m_device, m_swapchain, &image_count, nullptr);
-    m_swapchain_images.resize(image_count);
-    vkGetSwapchainImagesKHR(m_device, m_swapchain, &image_count, m_swapchain_images.data());
-
-    m_swapchain_image_views.resize(image_count);
-
-    for (usize i = 0; i < image_count; i++) {
-        VkImageViewCreateInfo view_info{
-            .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-            .image = m_swapchain_images[i],
-            .viewType = VK_IMAGE_VIEW_TYPE_2D,
-            .format = surface_format.format,
-            .components = {
-                .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-                .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-            },
-            .subresourceRange = {
-                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1
-            }
-        };
-
-        if (vkCreateImageView(m_device, &view_info, nullptr, &m_swapchain_image_views[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create image view {}", i);
-            return false;
-        }
-    }
-
-    return true;
-}
-
 bool Engine::create_render_pass() {
     VkAttachmentDescription color_attachment{
-        .format = m_surface_format.format,
+        .format = m_swapchain->surface_format().format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -429,30 +349,10 @@ bool Engine::create_render_pass() {
     return true;
 }
 
-bool Engine::create_framebuffers() {
-    // Create framebuffers for the render pass for each swapchain image.
-    for (const auto [i, image_view] : m_swapchain_image_views | std::views::enumerate) {
-        VkImageView attachments[] = { image_view };
-        VkFramebufferCreateInfo framebuffer_info{
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = m_render_pass,
-            .attachmentCount = 1,
-            .pAttachments = attachments,
-            .width = m_swapchain_extent.width,
-            .height = m_swapchain_extent.height,
-            .layers = 1
-        };
-
-        VkFramebuffer framebuffer;
-        if (vkCreateFramebuffer(m_device, &framebuffer_info, nullptr, &framebuffer) != VK_SUCCESS) {
-            spdlog::error("failed to create framebuffer {}", i);
-            return false;
-        }
-
-        m_swapchain_framebuffers.push_back(framebuffer);
-    }
-
-    return true;
+bool Engine::create_swapchain() {
+    int width, height;
+    SDL_GetWindowSizeInPixels(m_window, &width, &height);
+    return m_swapchain->create((u32) width, (u32) height, m_render_pass);
 }
 
 bool Engine::create_graphics_pipeline() {
@@ -663,13 +563,13 @@ bool Engine::create_vertex_buffer() {
 
 bool Engine::create_command_buffers() {
     // Allocate a command buffer for each swapchain image.
-    m_command_buffers.resize(m_swapchain_images.size());
+    m_command_buffers.resize(m_swapchain->image_count());
     
     VkCommandBufferAllocateInfo alloc_info_cmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = m_command_pool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = (u32) m_swapchain_images.size()
+        .commandBufferCount = (u32) m_swapchain->image_count()
     };
 
     if (vkAllocateCommandBuffers(m_device, &alloc_info_cmd, m_command_buffers.data()) != VK_SUCCESS) {
@@ -677,7 +577,7 @@ bool Engine::create_command_buffers() {
         return false;
     }
 
-    for (usize i = 0; i < m_swapchain_images.size(); i++) {
+    for (usize i = 0; i < m_swapchain->image_count(); i++) {
         VkCommandBufferBeginInfo begin_info{
             .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
         };
@@ -693,10 +593,10 @@ bool Engine::create_command_buffers() {
         VkRenderPassBeginInfo rp_begin_info{
             .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
             .renderPass = m_render_pass,
-            .framebuffer = m_swapchain_framebuffers[i],
+            .framebuffer = m_swapchain->framebuffer(i),
             .renderArea = {
                 .offset = { 0, 0 },
-                .extent = m_swapchain_extent
+                .extent = m_swapchain->extent()
             },
             .clearValueCount = 1,
             .pClearValues = &clear_col
@@ -706,15 +606,15 @@ bool Engine::create_command_buffers() {
         VkViewport viewport{
             .x = 0,
             .y = 0,
-            .width = (f32) m_swapchain_extent.width,
-            .height = (f32) m_swapchain_extent.height,
+            .width = (f32) m_swapchain->extent().width,
+            .height = (f32) m_swapchain->extent().height,
             .minDepth = 0,
             .maxDepth = 0
         };
 
         VkRect2D scissor{
             .offset = { 0, 0 },
-            .extent = m_swapchain_extent
+            .extent = m_swapchain->extent()
         };
 
         // Then draw.
@@ -738,7 +638,7 @@ bool Engine::create_command_buffers() {
 }
 
 bool Engine::create_sync_objects() {
-    usize image_count = m_swapchain_images.size();
+    usize image_count = m_swapchain->image_count();
     m_image_available_semaphores.resize(image_count);
     m_render_finished_semaphores.resize(image_count);
     m_in_flight_fences.resize(image_count);
@@ -775,14 +675,9 @@ void Engine::recreate_swapchain() {
     // Wait for the device to be idle before recreating the swapchain
     vkDeviceWaitIdle(m_device);
 
+    m_swapchain->reset();
+
     // Cleanup...
-    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-    for (const auto view : m_swapchain_image_views) {
-        vkDestroyImageView(m_device, view, nullptr);
-    }
-    for (const auto framebuffer : m_swapchain_framebuffers) {
-        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-    }
     vkFreeCommandBuffers(m_device, m_command_pool, (u32) m_command_buffers.size(), m_command_buffers.data()); 
     // TODO: Do we need to destroy sync objects?
     for (const auto semaphore : m_image_available_semaphores) {
@@ -795,9 +690,6 @@ void Engine::recreate_swapchain() {
         vkDestroyFence(m_device, fence, nullptr);
     }
 
-    m_swapchain_images.clear();
-    m_swapchain_image_views.clear();
-    m_swapchain_framebuffers.clear();
     m_command_buffers.clear();
     m_image_available_semaphores.clear();
     m_render_finished_semaphores.clear();
@@ -807,7 +699,6 @@ void Engine::recreate_swapchain() {
     
     // TODO: handle errors somehow. just nuke everything if resize fails ig
     create_swapchain();
-    create_framebuffers();
     create_command_buffers();
     create_sync_objects();
     
@@ -836,11 +727,11 @@ void Engine::render_frame() {
     vkResetFences(m_device, 1, &in_flight_fence);
 
     u32 image_index;
-    VkResult acquire_result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &image_index);
+    VkResult acquire_result = m_swapchain->acquire(image_available_semaphore, image_index);
 
     if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
         m_need_swapchain_recreate = true;
-        m_current_frame = (m_current_frame + 1) % m_swapchain_images.size();
+        m_current_frame = (m_current_frame + 1) % m_swapchain->image_count();
         return;
     } else if (acquire_result == VK_SUBOPTIMAL_KHR) {
         // Suboptimal means we can render this frame, but we should still recreate the swapchain after.
@@ -872,16 +763,7 @@ void Engine::render_frame() {
         return;
     }
 
-    VkPresentInfoKHR present_info{
-        .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = signal_semaphores,
-        .swapchainCount = 1,
-        .pSwapchains = &m_swapchain,
-        .pImageIndices = &image_index
-    };
-
-    VkResult present_result = vkQueuePresentKHR(m_present_queue, &present_info);
+    VkResult present_result = m_swapchain->present(m_present_queue, signal_semaphores[0], image_index);
 
     if (present_result == VK_SUBOPTIMAL_KHR || present_result == VK_ERROR_OUT_OF_DATE_KHR) {
         // Recreate swapchain next frame. We usually get this right before SDL sends a resize event anyway
@@ -891,5 +773,5 @@ void Engine::render_frame() {
         return;
     }
 
-    m_current_frame = (m_current_frame + 1) % m_swapchain_images.size();
+    m_current_frame = (m_current_frame + 1) % m_swapchain->image_count();
 }
