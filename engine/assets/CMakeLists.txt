@@ -19,7 +19,7 @@ endfunction()
 set(SHADER_BINARY_DIR "${PROJECT_BINARY_DIR}/shaders")
 set(ENGINE_ASSETS "")
 
-function(CompileShader SRC TYPE WORKING_DIR)
+function(CompileSlangShader SRC STAGE)
     get_filename_component(SRC_NAME ${SRC} NAME_WLE)
     get_filename_component(SRC_DIR ${SRC} DIRECTORY)
 
@@ -28,37 +28,31 @@ function(CompileShader SRC TYPE WORKING_DIR)
         set(SRC_DIR "${SRC_DIR}/")
     endif()
 
-    set(INPUT_FILE "${WORKING_DIR}/${SRC}")
-    set(OUTPUT_SPV_FILE "${SHADER_BINARY_DIR}/${SRC_DIR}/${SRC_NAME}.spv")
+    set(INPUT_FILE "${CMAKE_CURRENT_SOURCE_DIR}/${SRC}")
+    set(OUTPUT_SPV_FILE "${SHADER_BINARY_DIR}/${SRC_DIR}/${SRC_NAME}.${STAGE}.spv")
 
     add_custom_command(
         OUTPUT ${OUTPUT_SPV_FILE}
-        COMMAND ${Vulkan_GLSLC_EXECUTABLE} -fshader-stage=${TYPE} -o ${OUTPUT_SPV_FILE} ${INPUT_FILE}
+        COMMAND ${slangc_EXECUTABLE} -stage ${STAGE} -entry "${STAGE}_main" -o ${OUTPUT_SPV_FILE} ${INPUT_FILE}
         DEPENDS ${INPUT_FILE}
         COMMENT "Compiling shader ${OUTPUT_SPV_FILE}"
     )
 
-    EmbedAsset(ENGINE_ASSETS ${OUTPUT_SPV_FILE} "${SRC_DIR}${SRC_NAME}.spv")
+    EmbedAsset(ENGINE_ASSETS ${OUTPUT_SPV_FILE} "${SRC_DIR}${SRC_NAME}.${STAGE}.spv")
     # propagate variables
     set(ENGINE_ASSETS ${ENGINE_ASSETS} PARENT_SCOPE)
 endfunction()
 
-function(CompileVertexShader SRC WORKING_DIR)
-    CompileShader("${SRC}" vertex "${WORKING_DIR}")
+function(CompileSlangShaders SRC)
+    CompileSlangShader("${SRC}" vertex vertex_main)
+    CompileSlangShader("${SRC}" fragment fragment_main)
+
     # propagate variables
     set(ENGINE_ASSETS ${ENGINE_ASSETS} PARENT_SCOPE)
 endfunction()
 
-function(CompileFragmentShader SRC WORKING_DIR)
-    CompileShader("${SRC}" fragment "${WORKING_DIR}")
-    # propagate variables
-    set(ENGINE_ASSETS ${ENGINE_ASSETS} PARENT_SCOPE)
-endfunction()
 
-
-CompileFragmentShader("shader_frag.glsl" "${ASSETS_SOURCE_DIR}")
-CompileVertexShader("shader_vert.glsl" "${ASSETS_SOURCE_DIR}")
-
+CompileSlangShaders("shader.slang")
 
 set(ENGINE_ASSETS_FULL ${ENGINE_ASSETS})
 list(TRANSFORM ENGINE_ASSETS_FULL PREPEND "${ASSETS_STAGING_DIR}/")

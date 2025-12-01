@@ -1,9 +1,9 @@
 #include "engine.hpp"
 
-extern "C" const unsigned char _binary_shader_frag_spv_start[];
-extern "C" const unsigned char _binary_shader_frag_spv_end[];
-extern "C" const unsigned char _binary_shader_vert_spv_start[];
-extern "C" const unsigned char _binary_shader_vert_spv_end[];
+extern "C" const unsigned char _binary_shader_fragment_spv_start[];
+extern "C" const unsigned char _binary_shader_fragment_spv_end[];
+extern "C" const unsigned char _binary_shader_vertex_spv_start[];
+extern "C" const unsigned char _binary_shader_vertex_spv_end[];
 
 struct Vertex {
     glm::vec2 pos;
@@ -40,6 +40,14 @@ constexpr auto VERTICES = std::to_array<Vertex>({
     {{ 0.5, 0.5 }, { 0, 1, 0 }},
     {{ -0.5, 0.5 }, { 0, 0, 1 }}
 });
+
+struct UniformBufferObject {
+    glm::mat4x4 model;
+    glm::mat4x4 view;
+    glm::mat4x4 proj;
+};
+
+
 
 bool Engine::start() {
     if (!sdl3_init())
@@ -361,8 +369,8 @@ bool Engine::create_swapchain() {
 }
 
 bool Engine::create_graphics_pipeline() {
-    std::vector<u8> vert_shader(_binary_shader_vert_spv_start, _binary_shader_vert_spv_end);
-    std::vector<u8> frag_shader(_binary_shader_frag_spv_start, _binary_shader_frag_spv_end);
+    std::vector<u8> vert_shader(_binary_shader_vertex_spv_start, _binary_shader_vertex_spv_end);
+    std::vector<u8> frag_shader(_binary_shader_fragment_spv_start, _binary_shader_fragment_spv_end);
 
     VkShaderModuleCreateInfo vert_module_info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -709,11 +717,11 @@ void Engine::render_frame() {
         return;
     }
 
-    VkSemaphore wait_semaphores[] = {image_available_semaphore};
+    VkSemaphore wait_semaphores[] = { image_available_semaphore };
     VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSemaphore signal_semaphores[] = { m_swapchain->submit_semaphore(image_index) };
 
-    // Submit the command buffer that we already recorded.
+    // Submit the command buffer.
     VkSubmitInfo submit_info{
         .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
         .waitSemaphoreCount = 1,

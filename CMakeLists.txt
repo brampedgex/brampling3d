@@ -14,6 +14,11 @@ if (LD_EXECUTABLE STREQUAL "LD_EXECUTABLE-NOTFOUND")
     message(FATAL_ERROR "ld program not found! This is needed for embedding shaders.")
 endif()
 
+find_program(slangc_EXECUTABLE NAMES slangc)
+if (slangc_EXECUTABLE STREQUAL "slangc_EXECUTABLE-NOTFOUND")
+    message(FATAL_ERROR "slangc not found! This is needed for compiling shaders.")
+endif()
+
 set(SPDLOG_FMT_EXTERNAL ON)
 CPMAddPackage("gh:fmtlib/fmt#12.1.0")
 CPMAddPackage("gh:gabime/spdlog@1.16.0")
