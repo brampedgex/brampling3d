@@ -39,7 +39,7 @@ private:
     VkDevice m_device;
     VkSurfaceKHR m_surface;
 
-    VkSwapchainKHR m_swapchain;
+    VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_image_views;
     std::vector<VkFramebuffer> m_framebuffers;

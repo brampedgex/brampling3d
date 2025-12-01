@@ -37,6 +37,8 @@ private:
     void render_frame();
 
 private:
+    static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
+
     SDL_Window* m_window{};
 
     VkInstance m_vk_instance;
@@ -50,10 +52,10 @@ private:
     VkQueue m_graphics_queue, m_present_queue;
     VkCommandPool m_command_pool;
 
+    std::unique_ptr<VulkanSwapchain> m_swapchain;
+
     VkRenderPass m_render_pass;
     VkPipeline m_graphics_pipeline;
-
-    std::unique_ptr<VulkanSwapchain> m_swapchain;
 
     VkBuffer m_vertex_buffer;
     VkDeviceMemory m_vertex_buffer_memory;
@@ -61,8 +63,8 @@ private:
     std::vector<VkCommandBuffer> m_command_buffers;
     
     std::vector<VkSemaphore> m_image_available_semaphores;
-    std::vector<VkSemaphore> m_render_finished_semaphores;
     std::vector<VkFence> m_in_flight_fences;
+    std::vector<VkSemaphore> m_submit_semaphores;
 
     usize m_current_frame = 0;
     bool m_window_resized = false;

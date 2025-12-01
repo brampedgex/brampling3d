@@ -105,6 +105,9 @@ bool Engine::init_window() {
 }
 
 void Engine::quit() {
+    // Destroy Vulkan resources before destroying the window, which will rug-pull our resources and make the destructors explode instead.
+    m_swapchain.reset();
+
     SDL_Quit();
 }
 
@@ -121,6 +124,7 @@ bool Engine::init_graphics() {
     if (!create_device())
         return false;
 
+    // create_render_pass() depends on the surface format, which is chosen by VulkanSwapchain, before creating the actual swapchain.
     m_swapchain = std::make_unique<VulkanSwapchain>(m_physical_device, m_device, m_window_surface);
 
     if (!create_render_pass())
@@ -563,13 +567,13 @@ bool Engine::create_vertex_buffer() {
 
 bool Engine::create_command_buffers() {
     // Allocate a command buffer for each swapchain image.
-    m_command_buffers.resize(m_swapchain->image_count());
+    m_command_buffers.resize(MAX_FRAMES_IN_FLIGHT);
     
     VkCommandBufferAllocateInfo alloc_info_cmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
         .commandPool = m_command_pool,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-        .commandBufferCount = (u32) m_swapchain->image_count()
+        .commandBufferCount = MAX_FRAMES_IN_FLIGHT
     };
 
     if (vkAllocateCommandBuffers(m_device, &alloc_info_cmd, m_command_buffers.data()) != VK_SUCCESS) {
@@ -577,93 +581,38 @@ bool Engine::create_command_buffers() {
         return false;
     }
 
-    for (usize i = 0; i < m_swapchain->image_count(); i++) {
-        VkCommandBufferBeginInfo begin_info{
-            .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
-        };
-
-        if (vkBeginCommandBuffer(m_command_buffers[i], &begin_info) != VK_SUCCESS) {
-            spdlog::error("failed to begin recording command buffer {}", i);
-            return false;
-        }
-
-        VkClearValue clear_col = {{{0.2, 0.2, 0.2, 1}}};
-
-        // Begin the render pass by clearing the image.
-        VkRenderPassBeginInfo rp_begin_info{
-            .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = m_render_pass,
-            .framebuffer = m_swapchain->framebuffer(i),
-            .renderArea = {
-                .offset = { 0, 0 },
-                .extent = m_swapchain->extent()
-            },
-            .clearValueCount = 1,
-            .pClearValues = &clear_col
-        };
-
-        // Set viewport and scissor, which are dynamic.
-        VkViewport viewport{
-            .x = 0,
-            .y = 0,
-            .width = (f32) m_swapchain->extent().width,
-            .height = (f32) m_swapchain->extent().height,
-            .minDepth = 0,
-            .maxDepth = 0
-        };
-
-        VkRect2D scissor{
-            .offset = { 0, 0 },
-            .extent = m_swapchain->extent()
-        };
-
-        // Then draw.
-        vkCmdBeginRenderPass(m_command_buffers[i], &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-        vkCmdBindPipeline(m_command_buffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphics_pipeline);
-        vkCmdSetViewport(m_command_buffers[i], 0, 1, &viewport);
-        vkCmdSetScissor(m_command_buffers[i], 0, 1, &scissor);
-        VkBuffer vertex_bufs[] = { m_vertex_buffer };
-        VkDeviceSize offsets[] = { 0 };
-        vkCmdBindVertexBuffers(m_command_buffers[i], 0, 1, vertex_bufs, offsets);
-        vkCmdDraw(m_command_buffers[i], (u32) VERTICES.size(), 1, 0, 0);
-        vkCmdEndRenderPass(m_command_buffers[i]);
-
-        if (vkEndCommandBuffer(m_command_buffers[i]) != VK_SUCCESS) {
-            spdlog::error("failed to end command buffer {}", i);
-            return false;
-        }
-    }
-
     return true;
 }
 
 bool Engine::create_sync_objects() {
     usize image_count = m_swapchain->image_count();
-    m_image_available_semaphores.resize(image_count);
-    m_render_finished_semaphores.resize(image_count);
-    m_in_flight_fences.resize(image_count);
+    m_image_available_semaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_in_flight_fences.resize(MAX_FRAMES_IN_FLIGHT);
+    m_submit_semaphores.resize(m_swapchain->image_count());
 
     VkSemaphoreCreateInfo semaphore_info{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
     };
     VkFenceCreateInfo fence_info{
-            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
-            .flags = VK_FENCE_CREATE_SIGNALED_BIT
-        };
+        .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+        .flags = VK_FENCE_CREATE_SIGNALED_BIT
+    };
 
-    for (usize i = 0; i < image_count; i++) {
+    for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_image_available_semaphores[i]) != VK_SUCCESS) {
             spdlog::error("failed to create image available semaphore");
             return false;
         }
 
-        if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_render_finished_semaphores[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create render finished semaphore");
-            return false;
-        }
-
         if (vkCreateFence(m_device, &fence_info, nullptr, &m_in_flight_fences[i]) != VK_SUCCESS) {
             spdlog::error("failed to create in flight fence");
+            return false;
+        }
+    }
+
+    for (usize i = 0; i < image_count; i++) {
+        if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_submit_semaphores[i]) != VK_SUCCESS) {
+            spdlog::error("failed to create render finished semaphore");
             return false;
         }
     }
@@ -678,28 +627,25 @@ void Engine::recreate_swapchain() {
     m_swapchain->reset();
 
     // Cleanup...
-    vkFreeCommandBuffers(m_device, m_command_pool, (u32) m_command_buffers.size(), m_command_buffers.data()); 
     // TODO: Do we need to destroy sync objects?
     for (const auto semaphore : m_image_available_semaphores) {
         vkDestroySemaphore(m_device, semaphore, nullptr);
     }
-    for (const auto semaphore : m_render_finished_semaphores) {
+    for (const auto semaphore : m_submit_semaphores) {
         vkDestroySemaphore(m_device, semaphore, nullptr);
     }
     for (const auto fence : m_in_flight_fences) {
         vkDestroyFence(m_device, fence, nullptr);
     }
 
-    m_command_buffers.clear();
     m_image_available_semaphores.clear();
-    m_render_finished_semaphores.clear();
+    m_submit_semaphores.clear();
     m_in_flight_fences.clear();
 
     // Now recreate everything.
     
     // TODO: handle errors somehow. just nuke everything if resize fails ig
     create_swapchain();
-    create_command_buffers();
     create_sync_objects();
     
     // This fixes issues with synchronization. I have no idea why. Thank you random stackoverflow commenter!
@@ -731,7 +677,7 @@ void Engine::render_frame() {
 
     if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
         m_need_swapchain_recreate = true;
-        m_current_frame = (m_current_frame + 1) % m_swapchain->image_count();
+        m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
         return;
     } else if (acquire_result == VK_SUBOPTIMAL_KHR) {
         // Suboptimal means we can render this frame, but we should still recreate the swapchain after.
@@ -741,9 +687,66 @@ void Engine::render_frame() {
         return;
     }
 
+    VkCommandBuffer command_buffer = m_command_buffers[m_current_frame];
+
+    VkCommandBufferBeginInfo begin_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
+    };
+
+    if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+        spdlog::error("failed to begin recording command buffer");
+        return;
+    }
+
+    VkClearValue clear_col = {{{0.2, 0.2, 0.2, 1}}};
+
+    // Begin the render pass by clearing the image.
+    VkRenderPassBeginInfo rp_begin_info{
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+        .renderPass = m_render_pass,
+        .framebuffer = m_swapchain->framebuffer(image_index),
+        .renderArea = {
+            .offset = { 0, 0 },
+            .extent = m_swapchain->extent()
+        },
+        .clearValueCount = 1,
+        .pClearValues = &clear_col
+    };
+
+    // Set viewport and scissor, which are dynamic.
+    VkViewport viewport{
+        .x = 0,
+        .y = 0,
+        .width = (f32) m_swapchain->extent().width,
+        .height = (f32) m_swapchain->extent().height,
+        .minDepth = 0,
+        .maxDepth = 0
+    };
+
+    VkRect2D scissor{
+        .offset = { 0, 0 },
+        .extent = m_swapchain->extent()
+    };
+
+    // Then draw.
+    vkCmdBeginRenderPass(command_buffer, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphics_pipeline);
+    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+    VkBuffer vertex_bufs[] = { m_vertex_buffer };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
+    vkCmdDraw(command_buffer, (u32) VERTICES.size(), 1, 0, 0);
+    vkCmdEndRenderPass(command_buffer);
+
+    if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+        spdlog::error("failed to end command buffer");
+        return;
+    }
+
     VkSemaphore wait_semaphores[] = {image_available_semaphore};
     VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signal_semaphores[] = {m_render_finished_semaphores[image_index]};
+    VkSemaphore signal_semaphores[] = {m_submit_semaphores[image_index]};
 
     // Submit the command buffer that we already recorded.
     VkSubmitInfo submit_info{
@@ -752,7 +755,7 @@ void Engine::render_frame() {
         .pWaitSemaphores = wait_semaphores,
         .pWaitDstStageMask = wait_stages,
         .commandBufferCount = 1,
-        .pCommandBuffers = &m_command_buffers[m_current_frame],
+        .pCommandBuffers = &command_buffer,
         .signalSemaphoreCount = 1,
         .pSignalSemaphores = signal_semaphores
     };
@@ -773,5 +776,5 @@ void Engine::render_frame() {
         return;
     }
 
-    m_current_frame = (m_current_frame + 1) % m_swapchain->image_count();
+    m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }

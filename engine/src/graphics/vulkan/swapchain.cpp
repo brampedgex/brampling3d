@@ -151,7 +151,9 @@ VkResult VulkanSwapchain::present(VkQueue present_queue, VkSemaphore wait_semaph
 }
 
 void VulkanSwapchain::cleanup() {
-    vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+    if (m_swapchain != VK_NULL_HANDLE)
+        vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
+
     for (const auto image_view : m_image_views) {
         vkDestroyImageView(m_device, image_view, nullptr);
     }
