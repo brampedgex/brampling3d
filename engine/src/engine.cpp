@@ -497,7 +497,7 @@ bool Engine::create_graphics_pipeline() {
         .rasterizerDiscardEnable = VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
         .lineWidth = 1,
     };
 
@@ -902,8 +902,9 @@ void Engine::render_frame() {
 
         UniformBufferObject ubo;
         ubo.model = glm::rotate(glm::identity<glm::mat4x4>(), glm::radians(seconds * 180), glm::vec3(0, 1, 0));
-        ubo.view = glm::lookAt(glm::vec3(3, 3, 3), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-        ubo.proj = glm::perspective(glm::radians(90.f), aspect, 0.1f, 100.f);
+        ubo.view = glm::lookAt(glm::vec3(6, 5, 6), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        ubo.proj = glm::perspective(glm::radians(45.f), aspect, 0.1f, 100.f);
+        ubo.proj[1][1] *= -1; // vulkan coordinate system bullshit
 
         auto mem = m_uniform_buffer_memory[m_current_frame];
 
