@@ -1,7 +1,14 @@
 struct VSInput {
-    float2 pos;
+    float3 pos;
     float3 col;
 };
+
+struct UniformBuffer {
+    float4x4 model;
+    float4x4 view;
+    float4x4 proj;
+};
+ConstantBuffer<UniformBuffer> ubo;
 
 struct VSOutput {
     float4 pos : SV_Position;
@@ -11,7 +18,7 @@ struct VSOutput {
 [shader("vertex")]
 VSOutput vertex_main(VSInput in) {
     VSOutput output;
-    output.pos = float4(in.pos, 0, 1);
+    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(in.pos, 1))));
     output.col = in.col;
     return output;
 }

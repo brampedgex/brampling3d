@@ -6,7 +6,7 @@ extern "C" const unsigned char _binary_shader_vertex_spv_start[];
 extern "C" const unsigned char _binary_shader_vertex_spv_end[];
 
 struct Vertex {
-    glm::vec2 pos;
+    glm::vec3 pos;
     glm::vec3 col;
 
     static VkVertexInputBindingDescription binding_description() {
@@ -22,7 +22,7 @@ struct Vertex {
             {
                 .location = 0,
                 .binding = 0,
-                .format = VK_FORMAT_R32G32_SFLOAT,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
                 .offset = offsetof(Vertex, pos),
             },
             {
@@ -36,9 +36,23 @@ struct Vertex {
 };
 
 constexpr auto VERTICES = std::to_array<Vertex>({
-    {{ 0, -0.5 }, { 1, 0, 0 }},
-    {{ 0.5, 0.5 }, { 0, 1, 0 }},
-    {{ -0.5, 0.5 }, { 0, 0, 1 }}
+    {{ -0.5, 0.5, -0.5 }, { 0, 1, 0 }},
+    {{ -0.5, 0.5, 0.5 }, { 0, 1, 1 }},
+    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }},
+    {{ -0.5, -0.5, 0.5 }, { 0, 0, 1 }},
+    {{ 0.5, 0.5, -0.5 }, { 1, 1, 0 }},
+    {{ 0.5, 0.5, 0.5 }, { 1, 1, 1 }},
+    {{ 0.5, -0.5, -0.5 }, { 1, 0, 0 }},
+    {{ 0.5, -0.5, 0.5 }, { 1, 0, 1 }},
+});
+
+constexpr auto INDICES = std::to_array<u16>({
+    0, 1, 2, 1, 3, 2,
+    1, 5, 3, 5, 7, 3,
+    5, 4, 7, 4, 6, 7,
+    4, 0, 6, 0, 2, 6,
+    4, 5, 0, 5, 1, 0,
+    6, 2, 7, 7, 2, 3
 });
 
 struct UniformBufferObject {
@@ -46,8 +60,6 @@ struct UniformBufferObject {
     glm::mat4x4 view;
     glm::mat4x4 proj;
 };
-
-
 
 bool Engine::start() {
     if (!sdl3_init())
@@ -142,10 +154,25 @@ bool Engine::init_graphics() {
     if (!create_swapchain())
         return false;
 
+    if (!create_descriptor_set_layout())
+        return false;
+
     if (!create_graphics_pipeline())
         return false;
 
+    if (!create_uniform_buffers())
+        return false;
+
+    if (!create_descriptor_pool())
+        return false;
+
+    if (!create_descriptor_sets())
+        return false;
+
     if (!create_vertex_buffer())
+        return false;
+
+    if (!create_index_buffer())
         return false;
 
     if (!create_command_buffers())
@@ -368,6 +395,30 @@ bool Engine::create_swapchain() {
     return m_swapchain->create((u32) width, (u32) height, m_render_pass);
 }
 
+bool Engine::create_descriptor_set_layout() {
+    VkDescriptorSetLayoutBinding binding{
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = nullptr
+    }; 
+
+    VkDescriptorSetLayoutCreateInfo layout_create_info{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .flags = 0,
+        .bindingCount = 1,
+        .pBindings = &binding
+    };
+
+    if (vkCreateDescriptorSetLayout(m_device, &layout_create_info, nullptr, &m_descriptor_set_layout) != VK_SUCCESS) {
+        spdlog::error("failed to create descriptor set layout");
+        return false;
+    }
+
+    return true;
+}
+
 bool Engine::create_graphics_pipeline() {
     std::vector<u8> vert_shader(_binary_shader_vertex_spv_start, _binary_shader_vertex_spv_end);
     std::vector<u8> frag_shader(_binary_shader_fragment_spv_start, _binary_shader_fragment_spv_end);
@@ -446,7 +497,7 @@ bool Engine::create_graphics_pipeline() {
         .rasterizerDiscardEnable = VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .lineWidth = 1,
     };
 
@@ -484,10 +535,11 @@ bool Engine::create_graphics_pipeline() {
 
     VkPipelineLayoutCreateInfo pipeline_layout_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = 1,
+        .pSetLayouts = &m_descriptor_set_layout
     };
 
-    VkPipelineLayout pipeline_layout;
-    if (vkCreatePipelineLayout(m_device, &pipeline_layout_info, nullptr, &pipeline_layout) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(m_device, &pipeline_layout_info, nullptr, &m_pipeline_layout) != VK_SUCCESS) {
         spdlog::error("failed to create pipeline layout");
         return false;
     }
@@ -503,18 +555,131 @@ bool Engine::create_graphics_pipeline() {
         .pMultisampleState = &multisampling,
         .pColorBlendState = &color_blending,
         .pDynamicState = &dynamic_state_info,
-        .layout = pipeline_layout,
+        .layout = m_pipeline_layout,
         .renderPass = m_render_pass,
         .subpass = 0
     };
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_graphics_pipeline) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_pipeline) != VK_SUCCESS) {
         spdlog::error("failed to create graphics pipeline");
         return false;
     }
 
     vkDestroyShaderModule(m_device, frag_shader_module, nullptr);
     vkDestroyShaderModule(m_device, vert_shader_module, nullptr);
+    return true;
+}
+
+bool Engine::create_uniform_buffers() {
+    for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkBufferCreateInfo buffer_info{
+            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = sizeof(UniformBufferObject),
+            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+        };
+
+        if (vkCreateBuffer(m_device, &buffer_info, nullptr, &m_uniform_buffers[i]) != VK_SUCCESS) {
+            spdlog::error("failed to create uniform buffer {}", i);
+            return false;
+        }
+
+        VkMemoryRequirements mem_requirements;
+        vkGetBufferMemoryRequirements(m_device, m_uniform_buffers[i], &mem_requirements);
+
+        VkPhysicalDeviceMemoryProperties mem_properties;
+        vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
+
+        u32 memory_type_index = UINT32_MAX;
+        for (u32 j = 0; j < mem_properties.memoryTypeCount; j++) {
+            if ((mem_requirements.memoryTypeBits & (j << j)) &&
+                (mem_properties.memoryTypes[j].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
+                memory_type_index = j;
+                break;
+            }
+        }
+
+        if (memory_type_index == UINT32_MAX) {
+            spdlog::error("failed to find suitable memory type for uniform buffer");
+            return false;
+        }
+
+        VkMemoryAllocateInfo alloc_info{
+            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .allocationSize = mem_requirements.size,
+            .memoryTypeIndex = memory_type_index,
+        };
+
+        if (vkAllocateMemory(m_device, &alloc_info, nullptr, &m_uniform_buffer_memory[i]) != VK_SUCCESS) {
+            spdlog::error("failed to allocate vertex buffer memory");
+            return false;
+        }
+
+        vkBindBufferMemory(m_device, m_uniform_buffers[i], m_uniform_buffer_memory[i], 0);
+    }
+
+    return true;
+}
+
+bool Engine::create_descriptor_pool() {
+    VkDescriptorPoolSize pool_size{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .descriptorCount = MAX_FRAMES_IN_FLIGHT
+    };
+
+    VkDescriptorPoolCreateInfo pool_info{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+        .maxSets = MAX_FRAMES_IN_FLIGHT,
+        .poolSizeCount = 1,
+        .pPoolSizes = &pool_size
+    };
+
+    VkResult res = vkCreateDescriptorPool(m_device, &pool_info, nullptr, &m_descriptor_pool);
+    if (res != VK_SUCCESS) {
+        spdlog::error("failed to create descriptor pool: {}", vulkan_error_str(res));
+        return false;
+    }
+
+    return true;
+}
+
+bool Engine::create_descriptor_sets() {
+    std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT> layouts;
+    std::ranges::fill(layouts, m_descriptor_set_layout);
+
+    VkDescriptorSetAllocateInfo alloc_info{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .descriptorPool = m_descriptor_pool,
+        .descriptorSetCount = (u32) layouts.size(),
+        .pSetLayouts = layouts.data()
+    };
+
+    VkResult res = vkAllocateDescriptorSets(m_device, &alloc_info, m_descriptor_sets.data());
+    if (res != VK_SUCCESS) {
+        spdlog::error("failed to allocate descriptor sets: {}", vulkan_error_str(res));
+        return false;
+    }
+
+    for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+        VkDescriptorBufferInfo buffer_info{
+            .buffer = m_uniform_buffers[i],
+            .offset = 0,
+            .range = sizeof(UniformBufferObject),
+        };
+        
+        VkWriteDescriptorSet descriptor_write{
+            .dstSet = m_descriptor_sets[i],
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .pBufferInfo = &buffer_info
+        };
+
+        vkUpdateDescriptorSets(m_device, 1, &descriptor_write, 0, nullptr);
+    }
+    
     return true;
 }
 
@@ -528,7 +693,7 @@ bool Engine::create_vertex_buffer() {
 
     if (vkCreateBuffer(m_device, &buffer_info, nullptr, &m_vertex_buffer) != VK_SUCCESS) {
         spdlog::error("failed to create vertex buffer");
-        return true;
+        return false;
     }
 
     // Allocate memory and bind it to the buffer
@@ -549,7 +714,7 @@ bool Engine::create_vertex_buffer() {
     }
     if (memory_type_index == UINT32_MAX) {
         spdlog::error("failed to find suitable memory type for vertex buffer");
-        return true;
+        return false;
     }
 
     VkMemoryAllocateInfo alloc_info{
@@ -560,7 +725,7 @@ bool Engine::create_vertex_buffer() {
 
     if (vkAllocateMemory(m_device, &alloc_info, nullptr, &m_vertex_buffer_memory) != VK_SUCCESS) {
         spdlog::error("failed to allocate vertex buffer memory");
-        return true;
+        return false;
     }
 
     vkBindBufferMemory(m_device, m_vertex_buffer, m_vertex_buffer_memory, 0);
@@ -570,6 +735,62 @@ bool Engine::create_vertex_buffer() {
     vkMapMemory(m_device, m_vertex_buffer_memory, 0, buffer_info.size, 0, &data);
     memcpy(data, VERTICES.data(), static_cast<usize>(buffer_info.size));
     vkUnmapMemory(m_device, m_vertex_buffer_memory);
+
+    return true;
+}
+
+bool Engine::create_index_buffer() {
+    VkBufferCreateInfo buffer_info{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = sizeof(u16) * INDICES.size(),
+        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+    };
+
+    if (vkCreateBuffer(m_device, &buffer_info, nullptr, &m_index_buffer) != VK_SUCCESS) {
+        spdlog::error("failed to create index buffer");
+        return false;
+    }
+
+    // Allocate memory and bind it to the buffer
+    VkMemoryRequirements mem_requirements;
+    vkGetBufferMemoryRequirements(m_device, m_index_buffer, &mem_requirements);
+
+    VkPhysicalDeviceMemoryProperties mem_properties;
+    vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
+
+    // ?????
+    u32 memory_type_index = UINT32_MAX;
+    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
+        if ((mem_requirements.memoryTypeBits & (i << i)) &&
+            (mem_properties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
+            memory_type_index = i;
+            break;
+        }
+    }
+    if (memory_type_index == UINT32_MAX) {
+        spdlog::error("failed to find suitable memory type for index buffer");
+        return false;
+    }
+
+    VkMemoryAllocateInfo alloc_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_requirements.size,
+        .memoryTypeIndex = memory_type_index
+    };
+
+    if (vkAllocateMemory(m_device, &alloc_info, nullptr, &m_index_buffer_memory) != VK_SUCCESS) {
+        spdlog::error("failed to allocate index buffer memory");
+        return false;
+    }
+
+    vkBindBufferMemory(m_device, m_index_buffer, m_index_buffer_memory, 0);
+
+    // Upload index data.
+    void* data;
+    vkMapMemory(m_device, m_index_buffer_memory, 0, buffer_info.size, 0, &data);
+    memcpy(data, INDICES.data(), static_cast<usize>(buffer_info.size));
+    vkUnmapMemory(m_device, m_index_buffer_memory);
 
     return true;
 }
@@ -656,8 +877,7 @@ void Engine::render_frame() {
         // Suboptimal means we can render this frame, but we should still recreate the swapchain after.
         m_need_swapchain_recreate = true;
     } else if (acquire_result != VK_SUCCESS) {
-        spdlog::error("failed to acquire next image: {}", string_VkResult(acquire_result));
-        return;
+        vulkan_check_res(acquire_result, "failed to acquire swapchain image");
     }
 
     VkCommandBuffer command_buffer = m_command_buffers[m_current_frame];
@@ -666,9 +886,31 @@ void Engine::render_frame() {
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO
     };
 
-    if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
-        spdlog::error("failed to begin recording command buffer");
-        return;
+    vulkan_check_res(
+        vkBeginCommandBuffer(command_buffer, &begin_info),
+        "failed to begin recording command buffer"
+    );
+
+    {
+        auto now = std::chrono::steady_clock::now();
+        static auto start = now;
+
+        f32 seconds = std::chrono::duration_cast<std::chrono::duration<float>>(now - start).count();
+
+        auto extent = m_swapchain->extent();
+        auto aspect = (f32) extent.width / extent.height;
+
+        UniformBufferObject ubo;
+        ubo.model = glm::rotate(glm::identity<glm::mat4x4>(), glm::radians(seconds * 180), glm::vec3(0, 1, 0));
+        ubo.view = glm::lookAt(glm::vec3(3, 3, 3), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        ubo.proj = glm::perspective(glm::radians(90.f), aspect, 0.1f, 100.f);
+
+        auto mem = m_uniform_buffer_memory[m_current_frame];
+
+        void* data;
+        vkMapMemory(m_device, mem, 0, sizeof(UniformBufferObject), 0, &data);
+        memcpy(data, &ubo, sizeof(UniformBufferObject));
+        vkUnmapMemory(m_device, mem);
     }
 
     VkClearValue clear_col = {{{0.2, 0.2, 0.2, 1}}};
@@ -703,19 +945,22 @@ void Engine::render_frame() {
 
     // Then draw.
     vkCmdBeginRenderPass(command_buffer, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphics_pipeline);
+    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+    VkDescriptorSet descriptor_sets[] = { m_descriptor_sets[m_current_frame] };
     VkBuffer vertex_bufs[] = { m_vertex_buffer };
     VkDeviceSize offsets[] = { 0 };
+    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, descriptor_sets, 0, nullptr);
     vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
-    vkCmdDraw(command_buffer, (u32) VERTICES.size(), 1, 0, 0);
+    vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
     vkCmdEndRenderPass(command_buffer);
 
-    if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
-        spdlog::error("failed to end command buffer");
-        return;
-    }
+    vulkan_check_res(
+        vkEndCommandBuffer(command_buffer),
+        "failed to end command buffer"
+    );
 
     VkSemaphore wait_semaphores[] = { image_available_semaphore };
     VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
@@ -734,10 +979,7 @@ void Engine::render_frame() {
     };
 
     VkResult submit_result = vkQueueSubmit(m_graphics_queue, 1, &submit_info, in_flight_fence);
-    if (submit_result != VK_SUCCESS) {
-        spdlog::error("failed to submit draw command buffer for {}: {}", image_index, (int)submit_result);
-        return;
-    }
+    vulkan_check_res(submit_result, "failed to submit draw command buffer for {}", image_index);
 
     VkResult present_result = m_swapchain->present(m_present_queue, signal_semaphores[0], image_index);
 
@@ -745,8 +987,7 @@ void Engine::render_frame() {
         // Recreate swapchain next frame. We usually get this right before SDL sends a resize event anyway
         m_need_swapchain_recreate = true;
     } else if (present_result != VK_SUCCESS) {
-        spdlog::error("failed to present image {}: {}", image_index, (int)present_result);
-        return;
+        vulkan_check_res(present_result, "failed to present image {}", image_index);
     }
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;

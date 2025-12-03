@@ -25,8 +25,13 @@ private:
     bool create_device();
     bool create_render_pass();
     bool create_swapchain();
+    bool create_descriptor_set_layout();
     bool create_graphics_pipeline();
+    bool create_uniform_buffers();
+    bool create_descriptor_pool();
+    bool create_descriptor_sets();
     bool create_vertex_buffer();
+    bool create_index_buffer();
     bool create_command_buffers();
     bool create_sync_objects();
 
@@ -54,11 +59,23 @@ private:
 
     std::unique_ptr<VulkanSwapchain> m_swapchain;
 
+    VkDescriptorSetLayout m_descriptor_set_layout;
+
     VkRenderPass m_render_pass;
-    VkPipeline m_graphics_pipeline;
+    VkPipelineLayout m_pipeline_layout;
+    VkPipeline m_pipeline;
 
     VkBuffer m_vertex_buffer;
     VkDeviceMemory m_vertex_buffer_memory;
+
+    VkBuffer m_index_buffer;
+    VkDeviceMemory m_index_buffer_memory;
+    
+    std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_uniform_buffers;
+    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_uniform_buffer_memory;
+
+    VkDescriptorPool m_descriptor_pool;
+    std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;
 
     std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> m_command_buffers;
     

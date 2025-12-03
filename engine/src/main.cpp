@@ -1,13 +1,18 @@
 #include "engine.hpp"
 
 int main(int argc, char** argv) {
-    Engine engine;
-    
-    if (!engine.start()) {
-        spdlog::critical("startup failed!");
-        return 1;
+    try {
+        Engine engine;
+        
+        if (!engine.start()) {
+            spdlog::critical("startup failed!");
+            return 1;
+        }
+
+        engine.run();
+    } catch(std::exception& e) {
+        spdlog::critical("uncaught exception: {}", e.what());
     }
 
-    engine.run();
     return 0;
 }
