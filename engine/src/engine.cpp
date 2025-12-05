@@ -240,7 +240,7 @@ bool Engine::create_vk_instance() {
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
         .pEngineName = "brampling3D",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = VK_API_VERSION_1_0
+        .apiVersion = VK_API_VERSION_1_3
     };
 
     // Create a vulkan instance with the required extensions
@@ -666,6 +666,7 @@ bool Engine::create_descriptor_sets() {
         };
         
         VkWriteDescriptorSet descriptor_write{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
             .dstSet = m_descriptor_sets[i],
             .dstBinding = 0,
             .dstArrayElement = 0,
