@@ -1,6 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <ranges>
+#include <string>
+#include <string_view>
 
 #include <fmt/base.h>
 
@@ -11,3 +14,6 @@
 #include <glm/ext/matrix_clip_space.hpp>
 
 #include "def.hpp"
+
+using namespace std::chrono_literals;
+using namespace std::literals::string_literals;

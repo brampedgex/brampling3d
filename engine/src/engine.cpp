@@ -61,6 +61,12 @@ struct UniformBufferObject {
     glm::mat4x4 proj;
 };
 
+#ifdef DEBUG_BUILD
+constexpr bool ENABLE_VALIDATION_LAYERS = true;
+#else
+constexpr bool ENABLE_VALIDATION_LAYERS = false;
+#endif
+
 bool Engine::start() {
     if (!sdl3_init())
         return false;
@@ -135,7 +141,7 @@ void Engine::quit() {
 bool Engine::init_graphics() {
     if (!create_vk_instance())
         return false;
-    
+
     if (!create_window_surface())
         return false;
     
@@ -200,6 +206,32 @@ bool Engine::create_vk_instance() {
         return false;
     }
 
+    u32 layer_count;
+    vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
+    std::vector<VkLayerProperties> available_layers(layer_count);
+    vkEnumerateInstanceLayerProperties(&layer_count, available_layers.data());
+
+    std::vector<const char*> enabled_layers;
+
+    if constexpr (ENABLE_VALIDATION_LAYERS) {
+        constexpr auto DESIRED_LAYERS = std::to_array({ "VK_LAYER_KHRONOS_validation" });
+
+        for (auto desired_layer : DESIRED_LAYERS) {
+            bool available = false;
+
+            for (const auto& layer : available_layers) {
+                if (layer.layerName == std::string_view{desired_layer}) {
+                    enabled_layers.push_back(desired_layer);
+                    available = true;
+                    break;
+                }
+            }
+
+            if (!available)
+                spdlog::warn("validation layer unavailable: {}", desired_layer);
+        }
+    }
+
     // ApplicationInfo lets drivers enable application-specific optimizations.
     // So Intel, NVIDIA, and AMD can implement the best optimizations for brampling3D
     VkApplicationInfo app_info{
@@ -215,8 +247,10 @@ bool Engine::create_vk_instance() {
     VkInstanceCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .pApplicationInfo = &app_info,
+        .enabledLayerCount = (u32) enabled_layers.size(),
+        .ppEnabledLayerNames = enabled_layers.data(),
         .enabledExtensionCount = extension_count,
-        .ppEnabledExtensionNames = extensions
+        .ppEnabledExtensionNames = extensions,
     };
 
     if (vkCreateInstance(&create_info, nullptr, &m_vk_instance) != VK_SUCCESS) {
