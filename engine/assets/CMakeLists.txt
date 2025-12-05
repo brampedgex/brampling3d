@@ -60,10 +60,15 @@ list(TRANSFORM ENGINE_ASSETS_FULL PREPEND "${ASSETS_STAGING_DIR}/")
 set(ENGINE_ASSETS_ASM "${GENERATED_SOURCE_DIR}/engine_assets.asm")
 set(ENGINE_ASSETS_HPP "${GENERATED_SOURCE_DIR}/engine_assets.hpp")
 
+# Generate a .asm file embedding and exporting the binaries, and a header file that declares them in C++ for convenience.
 execute_process(
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/asset_build.py" -o ${ENGINE_ASSETS_ASM} --header ${ENGINE_ASSETS_HPP} --files ${ENGINE_ASSETS}
     WORKING_DIRECTORY ${ASSETS_STAGING_DIR}
 )
+
+# Ensure we re-run nasm when the asset files change.
+add_custom_target(EngineAssets ALL DEPENDS ${ENGINE_ASSETS_FULL})
+add_dependencies(${PROJECT_NAME} EngineAssets)
 
 set_source_files_properties(${ENGINE_ASSETS_ASM} PROPERTIES LANGUAGE ASM_NASM)
 target_sources(${PROJECT_NAME} PRIVATE ${ENGINE_ASSETS_ASM})
