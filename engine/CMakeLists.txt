@@ -1,6 +1,6 @@
 project(
     engine-main
-    LANGUAGES CXX
+    LANGUAGES CXX ASM
 )
 
 set(GENERATED_SOURCE_DIR "${CMAKE_BINARY_DIR}/generated")

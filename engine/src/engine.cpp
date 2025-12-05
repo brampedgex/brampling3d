@@ -203,9 +203,24 @@ bool Engine::create_vk_instance() {
         return false;
     }
 
-    std::vector extensions_vec(extensions, extensions + extension_count);
-    extensions_vec.push_back("VK_KHR_portability_enumeration");
+    std::vector enable_extensions(extensions, extensions + extension_count);
 
+    u32 supported_extension_count;
+    vkEnumerateInstanceExtensionProperties(nullptr, &supported_extension_count, nullptr);
+    std::vector<VkExtensionProperties> supported_extensions;
+    vkEnumerateInstanceExtensionProperties(nullptr, &supported_extension_count, supported_extensions.data());
+
+    // Try to enable VK_KHR_portability_enumeration for MoltenVK support.
+    constexpr auto DESIRED_EXTENSIONS = std::to_array({ VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME });
+
+    for (auto desired_extension : DESIRED_EXTENSIONS) {
+        for (const auto& extension : supported_extensions) {
+            if (extension.extensionName == std::string_view{desired_extension}) {
+                enable_extensions.push_back(desired_extension);
+                break;
+            }
+        }
+    }
 
     u32 layer_count;
     vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
@@ -252,14 +267,13 @@ bool Engine::create_vk_instance() {
         .enabledLayerCount = (u32) enabled_layers.size(),
         .ppEnabledLayerNames = enabled_layers.data(),
         .enabledExtensionCount = extension_count,
-        .ppEnabledExtensionNames = extensions,};
+        .ppEnabledExtensionNames = extensions,
+    };
 
-    vulkan_check_res(vkCreateInstance(&create_info, nullptr, &m_vk_instance),
-        "Failed to create vulkan instance");
-    // if (vkCreateInstance(&create_info, nullptr, &m_vk_instance) != VK_SUCCESS) {
-    //     spdlog::error("Failed to create vulkan instance");
-    //     return false;
-    // }
+    vulkan_check_res(
+        vkCreateInstance(&create_info, nullptr, &m_vk_instance),
+        "Failed to create vulkan instance"
+    );
 
     volkLoadInstance(m_vk_instance);
 
@@ -352,13 +366,25 @@ bool Engine::create_device() {
 
     VkPhysicalDeviceFeatures device_features{};
 
-    const char* device_extensions[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    std::vector<const char*> device_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+
+    u32 available_extension_count;
+    vkEnumerateDeviceExtensionProperties(m_physical_device, nullptr, &available_extension_count, nullptr);
+    std::vector<VkExtensionProperties> available_extensions(available_extension_count);
+    vkEnumerateDeviceExtensionProperties(m_physical_device, nullptr, &available_extension_count, available_extensions.data());
+
+    // VK_KHR_portability_subset must be enabled if supported by the device.
+    for (const auto& extension : available_extensions) {
+        if (extension.extensionName == std::string_view{ VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME })
+            device_extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+    }
+
     VkDeviceCreateInfo device_create_info{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
         .queueCreateInfoCount = (u32) queue_create_infos.size(),
         .pQueueCreateInfos = queue_create_infos.data(),
-        .enabledExtensionCount = 1,
-        .ppEnabledExtensionNames = device_extensions,
+        .enabledExtensionCount = (u32) device_extensions.size(),
+        .ppEnabledExtensionNames = device_extensions.data(),
         .pEnabledFeatures = &device_features,
     };
 
