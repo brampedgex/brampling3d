@@ -9,12 +9,7 @@ include(cmake/CPM.cmake)
 # Packages provided by the host system.
 find_package(SDL3 REQUIRED)
 find_package(Vulkan REQUIRED COMPONENTS volk)
-
-# ld (not lld-ld) is required for linking resource files.
-find_program(LD_EXECUTABLE NAMES ld)
-if (LD_EXECUTABLE STREQUAL "LD_EXECUTABLE-NOTFOUND")
-    message(FATAL_ERROR "ld program not found! This is needed for embedding shaders.")
-endif()
+find_package(Python3 3.12 REQUIRED COMPONENTS Interpreter)
 
 # slangc is required for compiling shaders.
 find_program(slangc_EXECUTABLE NAMES slangc)

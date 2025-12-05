@@ -1,9 +1,6 @@
 #include "engine.hpp"
 
-extern "C" const unsigned char _binary_shader_fragment_spv_start[];
-extern "C" const unsigned char _binary_shader_fragment_spv_end[];
-extern "C" const unsigned char _binary_shader_vertex_spv_start[];
-extern "C" const unsigned char _binary_shader_vertex_spv_end[];
+#include <engine-generated/engine_assets.hpp>
 
 struct Vertex {
     glm::vec3 pos;

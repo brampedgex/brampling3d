@@ -57,16 +57,13 @@ CompileSlangShaders("shader.slang")
 set(ENGINE_ASSETS_FULL ${ENGINE_ASSETS})
 list(TRANSFORM ENGINE_ASSETS_FULL PREPEND "${ASSETS_STAGING_DIR}/")
 
-set(ENGINE_ASSETS_OBJ "${ASSETS_BINARY_DIR}/engine_assets.o")
-add_custom_command(
-    OUTPUT ${ENGINE_ASSETS_OBJ}
-    COMMAND ${LD_EXECUTABLE} -r -b binary -o ${ENGINE_ASSETS_OBJ} ${ENGINE_ASSETS}
-    DEPENDS ${ENGINE_ASSETS_FULL}
+set(ENGINE_ASSETS_ASM "${GENERATED_SOURCE_DIR}/engine_assets.asm")
+set(ENGINE_ASSETS_HPP "${GENERATED_SOURCE_DIR}/engine_assets.hpp")
+
+execute_process(
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/asset_build.py" -o ${ENGINE_ASSETS_ASM} --header ${ENGINE_ASSETS_HPP} --files ${ENGINE_ASSETS}
     WORKING_DIRECTORY ${ASSETS_STAGING_DIR}
-    COMMENT "Building object ${ENGINE_ASSETS_OBJ}"
 )
 
-add_custom_target(EngineAssets ALL DEPENDS ${ENGINE_ASSETS_FULL} ${ENGINE_ASSETS_OBJ})
-add_dependencies(${PROJECT_NAME} EngineAssets)
-
-target_sources(${PROJECT_NAME} PRIVATE ${ENGINE_ASSETS_OBJ})
+set_source_files_properties(${ENGINE_ASSETS_ASM} PROPERTIES LANGUAGE ASM_NASM)
+target_sources(${PROJECT_NAME} PRIVATE ${ENGINE_ASSETS_ASM})
