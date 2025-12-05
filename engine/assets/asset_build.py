@@ -45,10 +45,10 @@ else:
 
 if args.nasm:
     for file in args.files:
-        symbols_name = get_symbol_name(file)
+        symbol_name = get_symbol_name(file)
         asm_file.write(f"""
             global {symbol_prefix}_binary_{symbol_name}_start
-            global {symbol_prefix}__binary_{symbol_name}_end
+            global {symbol_prefix}_binary_{symbol_name}_end
         """)
 
     asm_file.write(f"""
@@ -61,7 +61,7 @@ if args.nasm:
         asm_file.write(f"""
             {symbol_prefix}_binary_{symbol_name}_start:
             incbin "{abs_path}"
-            {symbol_prefix}__binary_{symbol_name}_end:
+            {symbol_prefix}_binary_{symbol_name}_end:
         """)
 else:
     for file in args.files:

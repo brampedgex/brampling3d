@@ -1,6 +1,6 @@
 project(
     engine-main
-    LANGUAGES CXX ASM
+    LANGUAGES CXX ASM ASM_NASM
 )
 
 set(GENERATED_SOURCE_DIR "${CMAKE_BINARY_DIR}/generated")
@@ -15,7 +15,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${GENERATED_SOURCE_DIR}/incl
 
 target_link_libraries(${PROJECT_NAME} 
     SDL3::SDL3
-    Vulkan::Vulkan
+    Vulkan::Headers
     Vulkan::volk
     spdlog::spdlog
     glm::glm

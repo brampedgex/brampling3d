@@ -259,10 +259,16 @@ bool Engine::create_vk_instance() {
         .apiVersion = VK_API_VERSION_1_3
     };
 
+    VkInstanceCreateFlags create_flags = 0;
+
+    if (std::ranges::contains(enable_extensions, std::string_view{ VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME })) {
+        create_flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
+
     // Create a vulkan instance with the required extensions
     VkInstanceCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-        .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
+        .flags = create_flags,
         .pApplicationInfo = &app_info,
         .enabledLayerCount = (u32) enabled_layers.size(),
         .ppEnabledLayerNames = enabled_layers.data(),
