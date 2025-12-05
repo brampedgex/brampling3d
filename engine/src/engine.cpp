@@ -203,6 +203,10 @@ bool Engine::create_vk_instance() {
         return false;
     }
 
+    std::vector extensions_vec(extensions, extensions + extension_count);
+    extensions_vec.push_back("VK_KHR_portability_enumeration");
+
+
     u32 layer_count;
     vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
     std::vector<VkLayerProperties> available_layers(layer_count);
@@ -243,17 +247,19 @@ bool Engine::create_vk_instance() {
     // Create a vulkan instance with the required extensions
     VkInstanceCreateInfo create_info {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+        .flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR,
         .pApplicationInfo = &app_info,
         .enabledLayerCount = (u32) enabled_layers.size(),
         .ppEnabledLayerNames = enabled_layers.data(),
         .enabledExtensionCount = extension_count,
-        .ppEnabledExtensionNames = extensions,
-    };
+        .ppEnabledExtensionNames = extensions,};
 
-    if (vkCreateInstance(&create_info, nullptr, &m_vk_instance) != VK_SUCCESS) {
-        spdlog::error("Failed to create vulkan instance");
-        return false;
-    }
+    vulkan_check_res(vkCreateInstance(&create_info, nullptr, &m_vk_instance),
+        "Failed to create vulkan instance");
+    // if (vkCreateInstance(&create_info, nullptr, &m_vk_instance) != VK_SUCCESS) {
+    //     spdlog::error("Failed to create vulkan instance");
+    //     return false;
+    // }
 
     volkLoadInstance(m_vk_instance);
 

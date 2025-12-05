@@ -25,5 +25,5 @@ VSOutput vertex_main(VSInput in) {
 
 [shader("fragment")]
 float3 fragment_main(VSOutput in) : SV_TARGET {
-    return float3(1, 0, 0);
+    return in.col;
 }
