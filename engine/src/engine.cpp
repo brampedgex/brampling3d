@@ -606,50 +606,13 @@ bool Engine::create_graphics_pipeline() {
 
 bool Engine::create_uniform_buffers() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        VkBufferCreateInfo buffer_info{
-            .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size = sizeof(UniformBufferObject),
-            .usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE
-        };
-
-        if (vkCreateBuffer(m_device, &buffer_info, nullptr, &m_uniform_buffers[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create uniform buffer {}", i);
-            return false;
-        }
-
-        VkMemoryRequirements mem_requirements;
-        vkGetBufferMemoryRequirements(m_device, m_uniform_buffers[i], &mem_requirements);
-
-        VkPhysicalDeviceMemoryProperties mem_properties;
-        vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
-
-        u32 memory_type_index = UINT32_MAX;
-        for (u32 j = 0; j < mem_properties.memoryTypeCount; j++) {
-            if ((mem_requirements.memoryTypeBits & (j << j)) &&
-                (mem_properties.memoryTypes[j].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
-                memory_type_index = j;
-                break;
-            }
-        }
-
-        if (memory_type_index == UINT32_MAX) {
-            spdlog::error("failed to find suitable memory type for uniform buffer");
-            return false;
-        }
-
-        VkMemoryAllocateInfo alloc_info{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            .allocationSize = mem_requirements.size,
-            .memoryTypeIndex = memory_type_index,
-        };
-
-        if (vkAllocateMemory(m_device, &alloc_info, nullptr, &m_uniform_buffer_memory[i]) != VK_SUCCESS) {
-            spdlog::error("failed to allocate vertex buffer memory");
-            return false;
-        }
-
-        vkBindBufferMemory(m_device, m_uniform_buffers[i], m_uniform_buffer_memory[i], 0);
+        create_buffer(
+            sizeof(UniformBufferObject),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            m_uniform_buffers[i],
+            m_uniform_buffer_memory[i]
+        );
     }
 
     return true;
@@ -718,112 +681,40 @@ bool Engine::create_descriptor_sets() {
 }
 
 bool Engine::create_vertex_buffer() {
-    VkBufferCreateInfo buffer_info{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = sizeof(Vertex) * VERTICES.size(),
-        .usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
-    };
+    usize size = sizeof(Vertex) * VERTICES.size();
 
-    if (vkCreateBuffer(m_device, &buffer_info, nullptr, &m_vertex_buffer) != VK_SUCCESS) {
-        spdlog::error("failed to create vertex buffer");
-        return false;
-    }
-
-    // Allocate memory and bind it to the buffer
-    VkMemoryRequirements mem_requirements;
-    vkGetBufferMemoryRequirements(m_device, m_vertex_buffer, &mem_requirements);
-
-    VkPhysicalDeviceMemoryProperties mem_properties;
-    vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
-
-    // ?????
-    u32 memory_type_index = UINT32_MAX;
-    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
-        if ((mem_requirements.memoryTypeBits & (i << i)) &&
-            (mem_properties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
-            memory_type_index = i;
-            break;
-        }
-    }
-    if (memory_type_index == UINT32_MAX) {
-        spdlog::error("failed to find suitable memory type for vertex buffer");
-        return false;
-    }
-
-    VkMemoryAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = memory_type_index
-    };
-
-    if (vkAllocateMemory(m_device, &alloc_info, nullptr, &m_vertex_buffer_memory) != VK_SUCCESS) {
-        spdlog::error("failed to allocate vertex buffer memory");
-        return false;
-    }
-
-    vkBindBufferMemory(m_device, m_vertex_buffer, m_vertex_buffer_memory, 0);
+    create_buffer(
+        size,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        m_vertex_buffer,
+        m_vertex_buffer_memory
+    );
 
     // Upload vertex data.
     void* data;
-    vkMapMemory(m_device, m_vertex_buffer_memory, 0, buffer_info.size, 0, &data);
-    memcpy(data, VERTICES.data(), static_cast<usize>(buffer_info.size));
+    vkMapMemory(m_device, m_vertex_buffer_memory, 0, size, 0, &data);
+    memcpy(data, VERTICES.data(), size);
     vkUnmapMemory(m_device, m_vertex_buffer_memory);
 
     return true;
 }
 
 bool Engine::create_index_buffer() {
-    VkBufferCreateInfo buffer_info{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = sizeof(u16) * INDICES.size(),
-        .usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
-    };
+    usize size = sizeof(u16) * INDICES.size();
 
-    if (vkCreateBuffer(m_device, &buffer_info, nullptr, &m_index_buffer) != VK_SUCCESS) {
-        spdlog::error("failed to create index buffer");
-        return false;
-    }
-
-    // Allocate memory and bind it to the buffer
-    VkMemoryRequirements mem_requirements;
-    vkGetBufferMemoryRequirements(m_device, m_index_buffer, &mem_requirements);
-
-    VkPhysicalDeviceMemoryProperties mem_properties;
-    vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
-
-    // ?????
-    u32 memory_type_index = UINT32_MAX;
-    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
-        if ((mem_requirements.memoryTypeBits & (i << i)) &&
-            (mem_properties.memoryTypes[i].propertyFlags & (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))) {
-            memory_type_index = i;
-            break;
-        }
-    }
-    if (memory_type_index == UINT32_MAX) {
-        spdlog::error("failed to find suitable memory type for index buffer");
-        return false;
-    }
-
-    VkMemoryAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = memory_type_index
-    };
-
-    if (vkAllocateMemory(m_device, &alloc_info, nullptr, &m_index_buffer_memory) != VK_SUCCESS) {
-        spdlog::error("failed to allocate index buffer memory");
-        return false;
-    }
-
-    vkBindBufferMemory(m_device, m_index_buffer, m_index_buffer_memory, 0);
+    create_buffer(
+        size,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        m_index_buffer,
+        m_index_buffer_memory
+    );
 
     // Upload index data.
     void* data;
-    vkMapMemory(m_device, m_index_buffer_memory, 0, buffer_info.size, 0, &data);
-    memcpy(data, INDICES.data(), static_cast<usize>(buffer_info.size));
+    vkMapMemory(m_device, m_index_buffer_memory, 0, size, 0, &data);
+    memcpy(data, INDICES.data(), size);
     vkUnmapMemory(m_device, m_index_buffer_memory);
 
     return true;
@@ -868,6 +759,53 @@ bool Engine::create_sync_objects() {
     }
 
     return true;
+}
+
+void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buf, VkDeviceMemory& mem) {
+    VkBufferCreateInfo buffer_info{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .size = size,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
+    };
+
+    vulkan_check_res(
+        vkCreateBuffer(m_device, &buffer_info, nullptr, &buf),
+        "failed to create buffer"
+    );
+
+    // Find suitable memory type.
+    VkMemoryRequirements mem_requirements;
+    vkGetBufferMemoryRequirements(m_device, buf, &mem_requirements);
+
+    VkPhysicalDeviceMemoryProperties mem_properties;
+    vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
+
+    // ?????
+    u32 memory_type_index = UINT32_MAX;
+    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
+        if ((mem_requirements.memoryTypeBits & (i << i)) &&
+            (mem_properties.memoryTypes[i].propertyFlags & mem_flags)) {
+            memory_type_index = i;
+            break;
+        }
+    }
+    if (memory_type_index == UINT32_MAX) {
+        throw std::runtime_error("failed to find suitable memory type for buffer");
+    }
+
+    VkMemoryAllocateInfo alloc_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_requirements.size,
+        .memoryTypeIndex = memory_type_index
+    };
+
+    vulkan_check_res(
+        vkAllocateMemory(m_device, &alloc_info, nullptr, &mem),
+        "failed to allocate buffer memory"
+    );
+
+    vkBindBufferMemory(m_device, buf, mem, 0);
 }
 
 void Engine::recreate_swapchain() {

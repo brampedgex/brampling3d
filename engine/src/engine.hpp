@@ -35,6 +35,8 @@ private:
     bool create_command_buffers();
     bool create_sync_objects();
 
+    void create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& mem);
+
     void recreate_swapchain();   
 
     void update_graphics();
