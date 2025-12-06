@@ -32,6 +32,7 @@ set(SPDLOG_FMT_EXTERNAL ON)
 CPMAddPackage("gh:fmtlib/fmt#12.1.0")
 CPMAddPackage("gh:gabime/spdlog@1.16.0")
 CPMAddPackage("gh:g-truc/glm#1.0.2")
+# CPMAddPackage("gh:libsdl-org/SDL#release-3.2.28")
 
 # Portable macro for debug builds.
 add_compile_definitions($<$<CONFIG:Debug>:DEBUG_BUILD>)

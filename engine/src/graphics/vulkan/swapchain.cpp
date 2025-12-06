@@ -99,8 +99,10 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
     // Create framebuffers for the passed in render pass for each image.
     // TODO: There's a bunch of other parameters about the framebuffer creation we'll have to pass in as well...
     // I should probably make the framebuffers externally with some kind of dependency system to recreate them when the swapchain is recreated.
-    for (const auto [i, image_view] : m_image_views | std::views::enumerate) {
-        VkImageView attachments[] = { image_view };
+    m_framebuffers.resize(m_images.size());
+
+    for (u32 i = 0; i < m_framebuffers.size(); i++) {
+        VkImageView attachments[] = { m_image_views[i] };
         VkFramebufferCreateInfo framebuffer_info{
             .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
             .renderPass = render_pass,
@@ -111,13 +113,10 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
             .layers = 1
         };
 
-        VkFramebuffer framebuffer;
-        if (vkCreateFramebuffer(m_device, &framebuffer_info, nullptr, &framebuffer) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(m_device, &framebuffer_info, nullptr, &m_framebuffers[i]) != VK_SUCCESS) {
             spdlog::error("failed to create framebuffer {}", i);
             return false;
         }
-
-        m_framebuffers.push_back(framebuffer);
     }
 
     // Submit semaphores are managed in this class, because they need to be indexed by the image index instead of the current frame.
