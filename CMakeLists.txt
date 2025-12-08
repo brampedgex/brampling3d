@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.0)
+cmake_minimum_required(VERSION 3.30)
 project(engine)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Fixes gcc build on macOS
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+# Windows was made by monkeys with typewriters so we have to do this so that it can find the SDL dlls.
+# Why doesn't cmake just put the .dll I'm linking against, that I'm BUILDING IN THE SAME PROJECT, in the same directory as my executable??
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/.cpm")
 include(cmake/CPM.cmake)
