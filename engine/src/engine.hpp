@@ -2,6 +2,8 @@
 
 #include "vulkan.hpp"
 #include "sdl3.hpp"
+
+#include "graphics/vulkan/device.hpp"
 #include "graphics/vulkan/swapchain.hpp"
 
 class Engine {
@@ -21,8 +23,6 @@ private:
 
     bool create_vk_instance();
     bool create_window_surface();
-    bool find_physical_device();
-    bool create_device();
     bool create_render_pass();
     bool create_descriptor_set_layout();
     bool create_graphics_pipeline();
@@ -43,6 +43,12 @@ private:
     void render_frame();
 
 private:
+    auto physical_device() const { return m_device->physical_device(); }
+    auto device() const { return m_device->device(); }
+    auto graphics_queue() const { return m_device->graphics_queue(); }
+    auto present_queue() const { return m_device->present_queue(); }
+
+private:
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
     SDL_Window* m_window{};
@@ -52,13 +58,7 @@ private:
     VkInstance m_vk_instance;
     VkSurfaceKHR m_window_surface;
     
-    VkPhysicalDevice m_physical_device;
-    u32 m_graphics_family;
-    u32 m_present_family;
-
-    VkDevice m_device;
-    VkQueue m_graphics_queue, m_present_queue;
-    VkCommandPool m_command_pool;
+    std::unique_ptr<VulkanDevice> m_device;
 
     std::unique_ptr<VulkanSwapchain> m_swapchain;
 
@@ -80,6 +80,7 @@ private:
     VkDescriptorPool m_descriptor_pool;
     std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;
 
+    VkCommandPool m_command_pool;
     std::array<VkCommandBuffer, MAX_FRAMES_IN_FLIGHT> m_command_buffers;
     
     std::array<VkSemaphore, MAX_FRAMES_IN_FLIGHT> m_image_available_semaphores;

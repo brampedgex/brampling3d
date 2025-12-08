@@ -141,7 +141,7 @@ void Engine::quit() {
     spdlog::info("quitting");
 
     // Destroy Vulkan resources before destroying the window, which will rug-pull our resources and make the destructors explode instead.
-    vkDeviceWaitIdle(m_device);
+    vkDeviceWaitIdle(device());
     m_swapchain.reset();
 
     SDL_Quit();
@@ -154,14 +154,10 @@ bool Engine::init_graphics() {
     if (!create_window_surface())
         return false;
     
-    if (!find_physical_device())
-        return false;
-
-    if (!create_device())
-        return false;
+    m_device = std::make_unique<VulkanDevice>(m_vk_instance, m_window_surface);
 
     // create_render_pass() depends on the surface format, which is chosen by VulkanSwapchain, before creating the actual swapchain.
-    m_swapchain = std::make_unique<VulkanSwapchain>(m_physical_device, m_device, m_window_surface);
+    m_swapchain = std::make_unique<VulkanSwapchain>(physical_device(), device(), m_window_surface);
 
     if (!create_render_pass())
         return false;
@@ -301,125 +297,6 @@ bool Engine::create_window_surface() {
     return true;
 }
 
-bool Engine::find_physical_device() {
-    u32 device_count;
-    vulkan_check_res(
-        vkEnumeratePhysicalDevices(m_vk_instance, &device_count, nullptr),
-        "Failed to enumerate vulkan devices"
-    );
-    std::vector<VkPhysicalDevice> devices(device_count);
-    vkEnumeratePhysicalDevices(m_vk_instance, &device_count, devices.data());
-
-    VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-    u32 graphics_family = UINT32_MAX;
-    u32 present_family = UINT32_MAX;
-
-    for (const auto device : devices) {
-        u32 queue_family_count = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, nullptr);
-
-        std::vector<VkQueueFamilyProperties> queue_families(queue_family_count);
-        vkGetPhysicalDeviceQueueFamilyProperties(device, &queue_family_count, queue_families.data());
-
-        bool graphics_found = false;
-        bool present_found = false;
-        for (u32 i = 0; i < queue_family_count; i++) {
-            if (queue_families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
-                graphics_family = i;
-                graphics_found = true;
-            }
-
-            VkBool32 present_support = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_window_surface, &present_support);
-            if (present_support) {
-                present_family = i;
-                present_found = true;
-            }
-        }
-
-        if (graphics_found && present_found) {
-            physical_device = device;
-            break;
-        }
-    }
-
-    if (physical_device == VK_NULL_HANDLE) {
-        spdlog::error("Failed to find a suitable vulkan device");
-        return false;
-    }
-
-    m_physical_device = physical_device;
-    m_graphics_family = graphics_family;
-    m_present_family = present_family;
-    return true;
-}
-
-bool Engine::create_device() {
-    f32 queue_priority = 1;
-    std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
-    queue_create_infos.push_back({
-        .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-        .queueFamilyIndex = m_graphics_family,
-        .queueCount = 1,
-        .pQueuePriorities = &queue_priority
-    });
-
-    if (m_graphics_family != m_present_family) {
-        queue_create_infos.push_back({
-            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-            .queueFamilyIndex = m_present_family,
-            .queueCount = 1,
-            .pQueuePriorities = &queue_priority
-        });
-    }
-
-    VkPhysicalDeviceFeatures device_features{};
-
-    std::vector<const char*> device_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
-
-    u32 available_extension_count;
-    vkEnumerateDeviceExtensionProperties(m_physical_device, nullptr, &available_extension_count, nullptr);
-    std::vector<VkExtensionProperties> available_extensions(available_extension_count);
-    vkEnumerateDeviceExtensionProperties(m_physical_device, nullptr, &available_extension_count, available_extensions.data());
-
-    // VK_KHR_portability_subset must be enabled if supported by the device.
-    for (const auto& extension : available_extensions) {
-        if (extension.extensionName == std::string_view{ VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME })
-            device_extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
-    }
-
-    VkDeviceCreateInfo device_create_info{
-        .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-        .queueCreateInfoCount = (u32) queue_create_infos.size(),
-        .pQueueCreateInfos = queue_create_infos.data(),
-        .enabledExtensionCount = (u32) device_extensions.size(),
-        .ppEnabledExtensionNames = device_extensions.data(),
-        .pEnabledFeatures = &device_features,
-    };
-
-    vulkan_check_res(
-        vkCreateDevice(m_physical_device, &device_create_info, nullptr, &m_device),
-        "failed to create vulkan device"
-    );
-
-    vkGetDeviceQueue(m_device, m_graphics_family, 0, &m_graphics_queue);
-    vkGetDeviceQueue(m_device, m_present_family, 0, &m_present_queue);
-
-    // Create a grapics command pool.
-    VkCommandPoolCreateInfo pool_info{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = m_graphics_family,
-    };
-
-    vulkan_check_res(
-        vkCreateCommandPool(m_device, &pool_info, nullptr, &m_command_pool),
-        "failed to create command pool"
-    );
-
-    return true;
-}
-
 bool Engine::create_render_pass() {
     VkAttachmentDescription color_attachment{
         .format = m_swapchain->surface_format().format,
@@ -452,7 +329,7 @@ bool Engine::create_render_pass() {
     };
 
     vulkan_check_res(
-        vkCreateRenderPass(m_device, &render_pass_info, nullptr, &m_render_pass),
+        vkCreateRenderPass(device(), &render_pass_info, nullptr, &m_render_pass),
         "failed to create render pass"
     );
 
@@ -476,7 +353,7 @@ bool Engine::create_descriptor_set_layout() {
     };
 
     vulkan_check_res(
-        vkCreateDescriptorSetLayout(m_device, &layout_create_info, nullptr, &m_descriptor_set_layout),
+        vkCreateDescriptorSetLayout(device(), &layout_create_info, nullptr, &m_descriptor_set_layout),
         "failed to create descriptor set layout"
     );
 
@@ -495,7 +372,7 @@ bool Engine::create_graphics_pipeline() {
 
     VkShaderModule vert_shader_module;
     vulkan_check_res(
-        vkCreateShaderModule(m_device, &vert_module_info, nullptr, &vert_shader_module),
+        vkCreateShaderModule(device(), &vert_module_info, nullptr, &vert_shader_module),
         "failed to create vertex shader"
     );
 
@@ -507,7 +384,7 @@ bool Engine::create_graphics_pipeline() {
 
     VkShaderModule frag_shader_module;
     vulkan_check_res(
-        vkCreateShaderModule(m_device, &frag_module_info, nullptr, &frag_shader_module),
+        vkCreateShaderModule(device(), &frag_module_info, nullptr, &frag_shader_module),
         "failed to create fragment shader"
     );
 
@@ -604,7 +481,7 @@ bool Engine::create_graphics_pipeline() {
     };
 
     vulkan_check_res(
-        vkCreatePipelineLayout(m_device, &pipeline_layout_info, nullptr, &m_pipeline_layout),
+        vkCreatePipelineLayout(device(), &pipeline_layout_info, nullptr, &m_pipeline_layout),
         "failed to create pipeline layout"
     );
 
@@ -625,12 +502,12 @@ bool Engine::create_graphics_pipeline() {
     };
 
     vulkan_check_res(
-        vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_pipeline),
+        vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_pipeline),
         "failed to create graphics pipeline"
     );
 
-    vkDestroyShaderModule(m_device, frag_shader_module, nullptr);
-    vkDestroyShaderModule(m_device, vert_shader_module, nullptr);
+    vkDestroyShaderModule(device(), frag_shader_module, nullptr);
+    vkDestroyShaderModule(device(), vert_shader_module, nullptr);
     return true;
 }
 
@@ -662,7 +539,7 @@ bool Engine::create_descriptor_pool() {
         .pPoolSizes = &pool_size
     };
 
-    VkResult res = vkCreateDescriptorPool(m_device, &pool_info, nullptr, &m_descriptor_pool);
+    VkResult res = vkCreateDescriptorPool(device(), &pool_info, nullptr, &m_descriptor_pool);
     vulkan_check_res(res, "failed to create descriptor pool");
 
     return true;
@@ -679,7 +556,7 @@ bool Engine::create_descriptor_sets() {
         .pSetLayouts = layouts.data()
     };
 
-    VkResult res = vkAllocateDescriptorSets(m_device, &alloc_info, m_descriptor_sets.data());
+    VkResult res = vkAllocateDescriptorSets(device(), &alloc_info, m_descriptor_sets.data());
     vulkan_check_res(res, "failed to allocate descriptor sets");
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -699,7 +576,7 @@ bool Engine::create_descriptor_sets() {
             .pBufferInfo = &buffer_info
         };
 
-        vkUpdateDescriptorSets(m_device, 1, &descriptor_write, 0, nullptr);
+        vkUpdateDescriptorSets(device(), 1, &descriptor_write, 0, nullptr);
     }
     
     return true;
@@ -718,9 +595,9 @@ bool Engine::create_vertex_buffer() {
 
     // Upload vertex data.
     void* data;
-    vkMapMemory(m_device, m_vertex_buffer_memory, 0, size, 0, &data);
+    vkMapMemory(device(), m_vertex_buffer_memory, 0, size, 0, &data);
     memcpy(data, VERTICES.data(), size);
-    vkUnmapMemory(m_device, m_vertex_buffer_memory);
+    vkUnmapMemory(device(), m_vertex_buffer_memory);
 
     return true;
 }
@@ -738,14 +615,26 @@ bool Engine::create_index_buffer() {
 
     // Upload index data.
     void* data;
-    vkMapMemory(m_device, m_index_buffer_memory, 0, size, 0, &data);
+    vkMapMemory(device(), m_index_buffer_memory, 0, size, 0, &data);
     memcpy(data, INDICES.data(), size);
-    vkUnmapMemory(m_device, m_index_buffer_memory);
+    vkUnmapMemory(device(), m_index_buffer_memory);
 
     return true;
 }
 
 bool Engine::create_command_buffers() {
+    // Create a grapics command pool.
+    VkCommandPoolCreateInfo pool_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = m_device->graphics_family(),
+    };
+
+    vulkan_check_res(
+        vkCreateCommandPool(device(), &pool_info, nullptr, &m_command_pool),
+        "failed to create command pool"
+    );
+
     // Allocate a command buffer for each swapchain image.
     VkCommandBufferAllocateInfo alloc_info_cmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -755,7 +644,7 @@ bool Engine::create_command_buffers() {
     };
 
     vulkan_check_res(
-        vkAllocateCommandBuffers(m_device, &alloc_info_cmd, m_command_buffers.data()),
+        vkAllocateCommandBuffers(device(), &alloc_info_cmd, m_command_buffers.data()),
         "failed to allocate command buffers"
     );
 
@@ -773,12 +662,12 @@ bool Engine::create_sync_objects() {
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         vulkan_check_res(
-            vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_image_available_semaphores[i]),
+            vkCreateSemaphore(device(), &semaphore_info, nullptr, &m_image_available_semaphores[i]),
             "failed to create image available semaphore {}", i
         );
 
         vulkan_check_res(
-            vkCreateFence(m_device, &fence_info, nullptr, &m_in_flight_fences[i]),
+            vkCreateFence(device(), &fence_info, nullptr, &m_in_flight_fences[i]),
             "failed to create in-flight fence {}", i
         );
     }
@@ -795,16 +684,16 @@ void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropert
     };
 
     vulkan_check_res(
-        vkCreateBuffer(m_device, &buffer_info, nullptr, &buf),
+        vkCreateBuffer(device(), &buffer_info, nullptr, &buf),
         "failed to create buffer"
     );
 
     // Find suitable memory type.
     VkMemoryRequirements mem_requirements;
-    vkGetBufferMemoryRequirements(m_device, buf, &mem_requirements);
+    vkGetBufferMemoryRequirements(device(), buf, &mem_requirements);
 
     VkPhysicalDeviceMemoryProperties mem_properties;
-    vkGetPhysicalDeviceMemoryProperties(m_physical_device, &mem_properties);
+    vkGetPhysicalDeviceMemoryProperties(physical_device(), &mem_properties);
 
     // ?????
     u32 memory_type_index = UINT32_MAX;
@@ -826,16 +715,16 @@ void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropert
     };
 
     vulkan_check_res(
-        vkAllocateMemory(m_device, &alloc_info, nullptr, &mem),
+        vkAllocateMemory(device(), &alloc_info, nullptr, &mem),
         "failed to allocate buffer memory"
     );
 
-    vkBindBufferMemory(m_device, buf, mem, 0);
+    vkBindBufferMemory(device(), buf, mem, 0);
 }
 
 void Engine::recreate_swapchain() {
     // Wait for the device to be idle before recreating the swapchain
-    vkDeviceWaitIdle(m_device);
+    vkDeviceWaitIdle(device());
 
     m_swapchain->reset();
     // TODO: recreate render pass if the surface format changed
@@ -867,8 +756,8 @@ void Engine::render_frame() {
     VkSemaphore image_available_semaphore = m_image_available_semaphores[m_current_frame];
     VkFence in_flight_fence = m_in_flight_fences[m_current_frame];
 
-    vkWaitForFences(m_device, 1, &in_flight_fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(m_device, 1, &in_flight_fence);
+    vkWaitForFences(device(), 1, &in_flight_fence, VK_TRUE, UINT64_MAX);
+    vkResetFences(device(), 1, &in_flight_fence);
 
     u32 image_index;
     VkResult acquire_result = m_swapchain->acquire(image_available_semaphore, image_index);
@@ -913,9 +802,9 @@ void Engine::render_frame() {
         auto mem = m_uniform_buffer_memory[m_current_frame];
 
         void* data;
-        vkMapMemory(m_device, mem, 0, sizeof(UniformBufferObject), 0, &data);
+        vkMapMemory(device(), mem, 0, sizeof(UniformBufferObject), 0, &data);
         memcpy(data, &ubo, sizeof(UniformBufferObject));
-        vkUnmapMemory(m_device, mem);
+        vkUnmapMemory(device(), mem);
     }
 
     VkClearValue clear_col = {{{0.2, 0.2, 0.2, 1}}};
@@ -983,10 +872,10 @@ void Engine::render_frame() {
         .pSignalSemaphores = signal_semaphores
     };
 
-    VkResult submit_result = vkQueueSubmit(m_graphics_queue, 1, &submit_info, in_flight_fence);
+    VkResult submit_result = vkQueueSubmit(graphics_queue(), 1, &submit_info, in_flight_fence);
     vulkan_check_res(submit_result, "failed to submit draw command buffer for {}", image_index);
 
-    VkResult present_result = m_swapchain->present(m_present_queue, signal_semaphores[0], image_index);
+    VkResult present_result = m_swapchain->present(present_queue(), signal_semaphores[0], image_index);
 
     if (present_result == VK_SUBOPTIMAL_KHR || present_result == VK_ERROR_OUT_OF_DATE_KHR) {
         // Recreate swapchain next frame. We usually get this right before SDL sends a resize event anyway
