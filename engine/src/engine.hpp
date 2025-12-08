@@ -24,7 +24,6 @@ private:
     bool find_physical_device();
     bool create_device();
     bool create_render_pass();
-    bool create_swapchain();
     bool create_descriptor_set_layout();
     bool create_graphics_pipeline();
     bool create_uniform_buffers();
@@ -47,6 +46,8 @@ private:
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
     SDL_Window* m_window{};
+    u32 m_window_width;
+    u32 m_window_height;
 
     VkInstance m_vk_instance;
     VkSurfaceKHR m_window_surface;

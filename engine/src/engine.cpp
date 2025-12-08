@@ -98,7 +98,10 @@ void Engine::run() {
                 break;
             case SDL_EVENT_WINDOW_RESIZED: {
                 auto& window_event = event.window;
-                spdlog::info("window resized: {} {}", window_event.data1, window_event.data2);
+
+                m_window_width = (u32) window_event.data1;
+                m_window_height = (u32) window_event.data2;
+                spdlog::info("window resized: {} {}", m_window_width, m_window_height);
 
                 m_window_resized = true;
             } break;
@@ -110,15 +113,22 @@ void Engine::run() {
         update_graphics();
     }
 
-    spdlog::info("quitting");
     quit();
 }
 
 bool Engine::init_window() {
+    // Hide the window until we are done initializing GPU resources.
+    // Maybe in the future we want to show some kind of splash screen when the loading process takes longer,
+    // but for now this is fine.
     if ((m_window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
         sdl3_perror("Failed to create window");
         return false;
     }
+
+    int width, height;
+    SDL_GetWindowSize(m_window, &width, &height);
+    m_window_width = (u32) width;
+    m_window_height = (u32) height;
 
     SDL_SetWindowResizable(m_window, true);
     SDL_SetWindowMinimumSize(m_window, 640, 480);
@@ -128,6 +138,8 @@ bool Engine::init_window() {
 }
 
 void Engine::quit() {
+    spdlog::info("quitting");
+
     // Destroy Vulkan resources before destroying the window, which will rug-pull our resources and make the destructors explode instead.
     vkDeviceWaitIdle(m_device);
     m_swapchain.reset();
@@ -154,7 +166,7 @@ bool Engine::init_graphics() {
     if (!create_render_pass())
         return false;
 
-    if (!create_swapchain())
+    if (!m_swapchain->create(m_window_width, m_window_height, m_render_pass))
         return false;
 
     if (!create_descriptor_set_layout())
@@ -291,11 +303,10 @@ bool Engine::create_window_surface() {
 
 bool Engine::find_physical_device() {
     u32 device_count;
-    vkEnumeratePhysicalDevices(m_vk_instance, &device_count, nullptr);
-    if (device_count == 0) {
-        spdlog::error("Failed to enumerate vulkan devices");
-        return false;
-    }
+    vulkan_check_res(
+        vkEnumeratePhysicalDevices(m_vk_instance, &device_count, nullptr),
+        "Failed to enumerate vulkan devices"
+    );
     std::vector<VkPhysicalDevice> devices(device_count);
     vkEnumeratePhysicalDevices(m_vk_instance, &device_count, devices.data());
 
@@ -386,10 +397,10 @@ bool Engine::create_device() {
         .pEnabledFeatures = &device_features,
     };
 
-    if (vkCreateDevice(m_physical_device, &device_create_info, nullptr, &m_device) != VK_SUCCESS) {
-        spdlog::error("Failed to create vulkan device");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreateDevice(m_physical_device, &device_create_info, nullptr, &m_device),
+        "failed to create vulkan device"
+    );
 
     vkGetDeviceQueue(m_device, m_graphics_family, 0, &m_graphics_queue);
     vkGetDeviceQueue(m_device, m_present_family, 0, &m_present_queue);
@@ -401,10 +412,10 @@ bool Engine::create_device() {
         .queueFamilyIndex = m_graphics_family,
     };
 
-    if (vkCreateCommandPool(m_device, &pool_info, nullptr, &m_command_pool) != VK_SUCCESS) {
-        spdlog::critical("failed to create command pool");
-        return 1;
-    }
+    vulkan_check_res(
+        vkCreateCommandPool(m_device, &pool_info, nullptr, &m_command_pool),
+        "failed to create command pool"
+    );
 
     return true;
 }
@@ -440,18 +451,12 @@ bool Engine::create_render_pass() {
         .pSubpasses = &subpass
     };
 
-    if (vkCreateRenderPass(m_device, &render_pass_info, nullptr, &m_render_pass) != VK_SUCCESS) {
-        spdlog::error("failed to create render pass");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreateRenderPass(m_device, &render_pass_info, nullptr, &m_render_pass),
+        "failed to create render pass"
+    );
 
     return true;
-}
-
-bool Engine::create_swapchain() {
-    int width, height;
-    SDL_GetWindowSizeInPixels(m_window, &width, &height);
-    return m_swapchain->create((u32) width, (u32) height, m_render_pass);
 }
 
 bool Engine::create_descriptor_set_layout() {
@@ -470,10 +475,10 @@ bool Engine::create_descriptor_set_layout() {
         .pBindings = &binding
     };
 
-    if (vkCreateDescriptorSetLayout(m_device, &layout_create_info, nullptr, &m_descriptor_set_layout) != VK_SUCCESS) {
-        spdlog::error("failed to create descriptor set layout");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreateDescriptorSetLayout(m_device, &layout_create_info, nullptr, &m_descriptor_set_layout),
+        "failed to create descriptor set layout"
+    );
 
     return true;
 }
@@ -489,10 +494,10 @@ bool Engine::create_graphics_pipeline() {
     };
 
     VkShaderModule vert_shader_module;
-    if (vkCreateShaderModule(m_device, &vert_module_info, nullptr, &vert_shader_module) != VK_SUCCESS) {
-        spdlog::error("failed to create vertex shader");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreateShaderModule(m_device, &vert_module_info, nullptr, &vert_shader_module),
+        "failed to create vertex shader"
+    );
 
     VkShaderModuleCreateInfo frag_module_info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -501,10 +506,10 @@ bool Engine::create_graphics_pipeline() {
     };
 
     VkShaderModule frag_shader_module;
-    if (vkCreateShaderModule(m_device, &frag_module_info, nullptr, &frag_shader_module) != VK_SUCCESS) {
-        spdlog::error("failed to create fragment shader");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreateShaderModule(m_device, &frag_module_info, nullptr, &frag_shader_module),
+        "failed to create fragment shader"
+    );
 
     VkPipelineShaderStageCreateInfo vert_stage_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
@@ -598,10 +603,10 @@ bool Engine::create_graphics_pipeline() {
         .pSetLayouts = &m_descriptor_set_layout
     };
 
-    if (vkCreatePipelineLayout(m_device, &pipeline_layout_info, nullptr, &m_pipeline_layout) != VK_SUCCESS) {
-        spdlog::error("failed to create pipeline layout");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreatePipelineLayout(m_device, &pipeline_layout_info, nullptr, &m_pipeline_layout),
+        "failed to create pipeline layout"
+    );
 
     VkGraphicsPipelineCreateInfo pipeline_info{
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
@@ -619,10 +624,10 @@ bool Engine::create_graphics_pipeline() {
         .subpass = 0
     };
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_pipeline) != VK_SUCCESS) {
-        spdlog::error("failed to create graphics pipeline");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_pipeline),
+        "failed to create graphics pipeline"
+    );
 
     vkDestroyShaderModule(m_device, frag_shader_module, nullptr);
     vkDestroyShaderModule(m_device, vert_shader_module, nullptr);
@@ -658,10 +663,7 @@ bool Engine::create_descriptor_pool() {
     };
 
     VkResult res = vkCreateDescriptorPool(m_device, &pool_info, nullptr, &m_descriptor_pool);
-    if (res != VK_SUCCESS) {
-        spdlog::error("failed to create descriptor pool: {}", vulkan_error_str(res));
-        return false;
-    }
+    vulkan_check_res(res, "failed to create descriptor pool");
 
     return true;
 }
@@ -678,10 +680,7 @@ bool Engine::create_descriptor_sets() {
     };
 
     VkResult res = vkAllocateDescriptorSets(m_device, &alloc_info, m_descriptor_sets.data());
-    if (res != VK_SUCCESS) {
-        spdlog::error("failed to allocate descriptor sets: {}", vulkan_error_str(res));
-        return false;
-    }
+    vulkan_check_res(res, "failed to allocate descriptor sets");
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo buffer_info{
@@ -755,10 +754,10 @@ bool Engine::create_command_buffers() {
         .commandBufferCount = MAX_FRAMES_IN_FLIGHT
     };
 
-    if (vkAllocateCommandBuffers(m_device, &alloc_info_cmd, m_command_buffers.data()) != VK_SUCCESS) {
-        spdlog::error("failed to allocate command buffers");
-        return false;
-    }
+    vulkan_check_res(
+        vkAllocateCommandBuffers(m_device, &alloc_info_cmd, m_command_buffers.data()),
+        "failed to allocate command buffers"
+    );
 
     return true;
 }
@@ -773,15 +772,15 @@ bool Engine::create_sync_objects() {
     };
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_image_available_semaphores[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create image available semaphore");
-            return false;
-        }
+        vulkan_check_res(
+            vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_image_available_semaphores[i]),
+            "failed to create image available semaphore {}", i
+        );
 
-        if (vkCreateFence(m_device, &fence_info, nullptr, &m_in_flight_fences[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create in flight fence");
-            return false;
-        }
+        vulkan_check_res(
+            vkCreateFence(m_device, &fence_info, nullptr, &m_in_flight_fences[i]),
+            "failed to create in-flight fence {}", i
+        );
     }
 
     return true;
@@ -841,7 +840,7 @@ void Engine::recreate_swapchain() {
     m_swapchain->reset();
     // TODO: recreate render pass if the surface format changed
     // TODO: handle errors. just nuke everything if resize fails ig
-    create_swapchain();
+    m_swapchain->create(m_window_width, m_window_height, m_render_pass);
 
     spdlog::info("finished swapchain recreate");
 }
@@ -850,6 +849,13 @@ void Engine::update_graphics() {
     // Handle swapchain recreation before rendering a frame.
     if (m_window_resized || m_need_swapchain_recreate) {
         m_window_resized = m_need_swapchain_recreate = false;
+
+        // We update window size in the SDL resize event, but let's double check 
+        // that it's correct in case the state somehow gets out of sync
+        int width, height;
+        SDL_GetWindowSizeInPixels(m_window, &width, &height);
+        m_window_width = (u32) width;
+        m_window_height = (u32) height;
 
         recreate_swapchain();
     }
