@@ -189,12 +189,6 @@ bool Engine::init_graphics() {
 }
 
 bool Engine::create_vk_instance() {
-    // Load Vulkan entry points
-    if (volkInitialize() != VK_SUCCESS) {
-        spdlog::error("Failed to load Vulkan");
-        return false;
-    }
-
     // Get instance extensions needed for vkCreateInstance
     u32 extension_count;
     auto* extensions = SDL_Vulkan_GetInstanceExtensions(&extension_count);
@@ -280,8 +274,6 @@ bool Engine::create_vk_instance() {
         vkCreateInstance(&create_info, nullptr, &m_vk_instance),
         "Failed to create vulkan instance"
     );
-
-    volkLoadInstance(m_vk_instance);
 
     spdlog::info("vulkan instance created");
 
@@ -398,8 +390,6 @@ bool Engine::create_device() {
         spdlog::error("Failed to create vulkan device");
         return false;
     }
-
-    volkLoadDevice(m_device);
 
     vkGetDeviceQueue(m_device, m_graphics_family, 0, &m_graphics_queue);
     vkGetDeviceQueue(m_device, m_present_family, 0, &m_present_queue);

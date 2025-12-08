@@ -13,17 +13,9 @@ add_executable(${PROJECT_NAME} ${ENGINE_MAIN_SOURCES})
 # Include generated source files.
 target_include_directories(${PROJECT_NAME} PRIVATE "${GENERATED_SOURCE_DIR}/include")
 
-# Using Vulkan::Headers crashes on macOS. Why???
-if (MSVC)
-    set(VULKAN_TARGET Vulkan::Headers)
-else()
-    set(VULKAN_TARGET Vulkan::Vulkan)
-endif()
-
 target_link_libraries(${PROJECT_NAME} 
     SDL3::SDL3
-    ${VULKAN_TARGET}
-    Vulkan::volk
+    Vulkan::Vulkan
     spdlog::spdlog
     glm::glm
 )
