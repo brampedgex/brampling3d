@@ -38,7 +38,20 @@ CPMAddPackage("gh:gabime/spdlog@1.16.0")
 CPMAddPackage("gh:g-truc/glm#1.0.2")
 CPMAddPackage("gh:libsdl-org/SDL#release-3.2.28")
 
-# imgui, needs to be set up manually
+CPMAddPackage(
+    NAME stb
+    GIT_REPOSITORY https://github.com/nothings/stb
+    GIT_TAG f1c79c02822848a9bed4315b12c8c8f3761e1296
+    DOWNLOAD_ONLY YES
+)
+
+if (stb_ADDED)
+    add_library(stb INTERFACE)
+    target_include_directories(stb INTERFACE $<BUILD_INTERFACE:${stb_SOURCE_DIR}>)
+    
+    add_library(stb::stb ALIAS stb)
+endif()
+
 CPMAddPackage(
     NAME imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui

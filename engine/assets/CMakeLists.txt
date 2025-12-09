@@ -18,6 +18,12 @@ function(EmbedAsset OUT_VAR SRC DEST)
     set(${OUT_VAR} ${${OUT_VAR}} ${DEST} PARENT_SCOPE)
 endfunction()
 
+function(EmbedFile SRC)
+    EmbedAsset(ENGINE_ASSETS ${SRC} ${SRC})
+    # propagate variables
+    set(ENGINE_ASSETS ${ENGINE_ASSETS} PARENT_SCOPE)
+endfunction()
+
 set(SHADER_BINARY_DIR "${PROJECT_BINARY_DIR}/shaders")
 set(ENGINE_ASSETS "")
 
@@ -55,6 +61,7 @@ endfunction()
 
 
 CompileSlangShaders("shaders/color3d.slang")
+EmbedFile("images/soggy.png")
 
 
 if (MSVC OR APPLE)

@@ -6,9 +6,12 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
+#include "stb.hpp"
+
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 col;
+    glm::vec2 tex_coord;
 
     static VkVertexInputBindingDescription binding_description() {
         return {
@@ -18,7 +21,7 @@ struct Vertex {
         };
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions() {
+    static std::array<VkVertexInputAttributeDescription, 3> attribute_descriptions() {
         return std::to_array<VkVertexInputAttributeDescription>({
             {
                 .location = 0,
@@ -31,29 +34,57 @@ struct Vertex {
                 .binding = 0,
                 .format = VK_FORMAT_R32G32B32_SFLOAT,
                 .offset = offsetof(Vertex, col)
+            },
+            {
+                .location = 2,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32_SFLOAT,
+                .offset = offsetof(Vertex, tex_coord)
             }
         });
     }
 };
 
 constexpr auto VERTICES = std::to_array<Vertex>({
-    {{ -0.5, 0.5, -0.5 }, { 0, 1, 0 }},
-    {{ -0.5, 0.5, 0.5 }, { 0, 1, 1 }},
-    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }},
-    {{ -0.5, -0.5, 0.5 }, { 0, 0, 1 }},
-    {{ 0.5, 0.5, -0.5 }, { 1, 1, 0 }},
-    {{ 0.5, 0.5, 0.5 }, { 1, 1, 1 }},
-    {{ 0.5, -0.5, -0.5 }, { 1, 0, 0 }},
-    {{ 0.5, -0.5, 0.5 }, { 1, 0, 1 }},
+    // -x
+    {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 0, 0 }},
+    {{ -0.5,  0.5,  0.5 }, { 0, 1, 1 }, { 1, 0 }},
+    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }, { 0, 1 }},
+    {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 1, 1 }},
+    // +z
+    {{ -0.5,  0.5,  0.5 }, { 0, 1, 1 }, { 0, 0 }},
+    {{  0.5,  0.5,  0.5 }, { 1, 1, 1 }, { 1, 0 }},
+    {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 0, 1 }},
+    {{  0.5, -0.5,  0.5 }, { 1, 0, 1 }, { 1, 1 }},
+    // +x
+    {{  0.5,  0.5,  0.5 }, { 1, 1, 1 }, { 0, 0 }},
+    {{  0.5,  0.5, -0.5 }, { 1, 1, 0 }, { 1, 0 }},
+    {{  0.5, -0.5,  0.5 }, { 1, 0, 1 }, { 0, 1 }},
+    {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 1, 1 }},
+    // -z
+    {{  0.5,  0.5, -0.5 }, { 1, 1, 0 }, { 0, 0 }},
+    {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 1, 0 }},
+    {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 0, 1 }},
+    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }, { 1, 1 }},
+    // +y
+    {{  0.5,  0.5, -0.5 }, { 1, 1, 0 }, { 0, 0 }},
+    {{  0.5,  0.5,  0.5 }, { 1, 1, 1 }, { 1, 0 }},
+    {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 0, 1 }},
+    {{ -0.5,  0.5,  0.5 }, { 0, 1, 1 }, { 1, 1 }},
+    // -y
+    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }, { 0, 0 }},
+    {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 1, 0 }},
+    {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 0, 1 }},
+    {{  0.5, -0.5,  0.5 }, { 0, 1, 1 }, { 1, 1 }}
 });
 
 constexpr auto INDICES = std::to_array<u16>({
-    0, 1, 2, 1, 3, 2,
-    1, 5, 3, 5, 7, 3,
-    5, 4, 7, 4, 6, 7,
-    4, 0, 6, 0, 2, 6,
-    4, 5, 0, 5, 1, 0,
-    6, 2, 7, 7, 2, 3
+     0,  1,  2,  1,  3,  2,
+     4,  5,  6,  5,  7,  6,
+     8,  9, 10,  9, 11, 10,
+    12, 13, 14, 13, 15, 14,
+    16, 17, 18, 17, 19, 18,
+    20, 21, 22, 21, 23, 22,
 });
 
 struct UniformBufferObject {
@@ -174,6 +205,12 @@ bool Engine::init_graphics() {
 
     if (!m_swapchain->create(m_window_width, m_window_height, m_render_pass))
         return false;
+
+    create_command_pools();
+
+    create_texture_image();
+    create_texture_image_view();
+    create_texture_sampler();
 
     if (!create_descriptor_set_layout())
         return false;
@@ -384,8 +421,32 @@ bool Engine::create_render_pass() {
     return true;
 }
 
+void Engine::create_command_pools() {
+    VkCommandPoolCreateInfo pool_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+        .queueFamilyIndex = m_device->graphics_family(),
+    };
+    vulkan_check_res(
+        vkCreateCommandPool(device(), &pool_info, nullptr, &m_command_pool),
+        "failed to create command pool"
+    );
+
+    // Create a separate command pool for transient (single time) command buffers.
+    // Per the Vulkan spec this can allow the driver to optimize for this use case.
+    VkCommandPoolCreateInfo transient_pool_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
+        .queueFamilyIndex = m_device->graphics_family()
+    };
+    vulkan_check_res(
+        vkCreateCommandPool(device(), &transient_pool_info, nullptr, &m_transient_command_pool),
+        "failed to create command pool"
+    );
+}
+
 bool Engine::create_descriptor_set_layout() {
-    VkDescriptorSetLayoutBinding binding{
+    VkDescriptorSetLayoutBinding ubo_binding{
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = 1,
@@ -393,13 +454,22 @@ bool Engine::create_descriptor_set_layout() {
         .pImmutableSamplers = nullptr
     }; 
 
+    VkDescriptorSetLayoutBinding sampler_layout_binding{
+        .binding = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = 1,
+        .pImmutableSamplers = nullptr,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
+    };
+
+    const auto bindings = std::to_array({ ubo_binding, sampler_layout_binding });
+
     VkDescriptorSetLayoutCreateInfo layout_create_info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
         .flags = 0,
-        .bindingCount = 1,
-        .pBindings = &binding
+        .bindingCount = bindings.size(),
+        .pBindings = bindings.data()
     };
-
     vulkan_check_res(
         vkCreateDescriptorSetLayout(device(), &layout_create_info, nullptr, &m_descriptor_set_layout),
         "failed to create descriptor set layout"
@@ -559,6 +629,220 @@ bool Engine::create_graphics_pipeline() {
     return true;
 }
 
+bool Engine::create_texture_image() {
+    std::span<const u8> soggy_data{
+        (const u8*) _binary_images_soggy_png_start,
+        (const u8*) _binary_images_soggy_png_end,
+    };
+
+    auto image = stb::Image::from_bytes(soggy_data, 4);
+    if (!image)
+        throw std::runtime_error("failed to load soggy.png");
+
+    VkDeviceSize image_size = image->width() * image->height() * 4;
+
+    // Create a staging buffer to upload our texture to.
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_buffer_memory;
+    create_buffer(image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+
+    // Upload the texture.
+    void* data;
+    vkMapMemory(device(), staging_buffer_memory, 0, image_size, 0, &data);
+    memcpy(data, image->data(), (usize) image_size);
+    vkUnmapMemory(device(), staging_buffer_memory);
+
+    // Create the texture image.
+    VkImageCreateInfo image_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = 0,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .extent.width = image->width(),
+        .extent.height = image->height(),
+        .extent.depth = 1,
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+    };
+    vulkan_check_res(
+        vkCreateImage(device(), &image_info, nullptr, &m_texture_image),
+        "failed to create texture image"
+    );
+
+    // Allocate memory for the image.
+    VkMemoryRequirements mem_requirements;
+    vkGetImageMemoryRequirements(device(), m_texture_image, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_requirements.size,
+        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    vulkan_check_res(
+        vkAllocateMemory(device(), &alloc_info, nullptr, &m_texture_image_memory),
+        "failed to allocate texture image memory"
+    );
+
+    vkBindImageMemory(device(), m_texture_image, m_texture_image_memory, 0);
+
+    VkCommandBuffer command_buffer = begin_single_time_commands();
+
+    VkImageMemoryBarrier barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        // We can transfer an image between queues this way. We could hypothetically use a separate queue to upload images, allowing async texture uploads.
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = m_texture_image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        },
+        .srcAccessMask = 0, // TODO
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, // TODO
+    };
+
+    // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier
+    );
+
+    end_single_time_commands(command_buffer);
+
+    // Copy the staging buffer.
+    command_buffer = begin_single_time_commands();
+
+    VkBufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        },
+        .imageOffset = { .x = 0, .y = 0, .z = 0 },
+        .imageExtent = { .width = image->width(), .height = image->height(), .depth =  1 }
+    };
+
+    vkCmdCopyBufferToImage(
+        command_buffer,
+        staging_buffer,
+        m_texture_image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &region
+    );
+
+    end_single_time_commands(command_buffer);
+
+    // Prepare the texture for shader use.
+    command_buffer = begin_single_time_commands();
+
+    VkImageMemoryBarrier barrier2{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        // We can transfer an image between queues this way. We could hypothetically use a separate queue to upload images, allowing async texture uploads.
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = m_texture_image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        },
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, // TODO
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT, // TODO
+    };
+
+    // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier2
+    );
+
+    end_single_time_commands(command_buffer);
+
+    // Cleanup staging buffer.
+    vkDestroyBuffer(device(), staging_buffer, nullptr);
+    vkFreeMemory(device(), staging_buffer_memory, nullptr);
+
+    return true;
+}
+
+void Engine::create_texture_image_view() {
+    VkImageViewCreateInfo view_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = m_texture_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+    vulkan_check_res(
+        vkCreateImageView(device(), &view_info, nullptr, &m_texture_image_view),
+        "failed to create texture image view"
+    );
+}
+
+void Engine::create_texture_sampler() {
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physical_device(), &properties);
+
+    VkSamplerCreateInfo sampler_info{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .anisotropyEnable = VK_TRUE,
+        .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
+        // TODO: what's this?
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .mipLodBias = 0,
+        .minLod = 0,
+        .maxLod = 0
+    };
+    vulkan_check_res(
+        vkCreateSampler(device(), &sampler_info, nullptr, &m_texture_sampler),
+        "failed to create texture sampler"
+    );
+}
+
 bool Engine::create_uniform_buffers() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         create_buffer(
@@ -574,19 +858,25 @@ bool Engine::create_uniform_buffers() {
 }
 
 bool Engine::create_descriptor_pool() {
-    VkDescriptorPoolSize pool_size{
+    VkDescriptorPoolSize ubo_pool_size{
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = MAX_FRAMES_IN_FLIGHT
     };
+
+    VkDescriptorPoolSize sampler_pool_size{
+        .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .descriptorCount = MAX_FRAMES_IN_FLIGHT     // TODO does it need to be this and not one or is this a bug in the tutorial?
+    };
+
+    const auto pool_sizes = std::to_array({ ubo_pool_size, sampler_pool_size });
 
     VkDescriptorPoolCreateInfo pool_info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
         .maxSets = MAX_FRAMES_IN_FLIGHT,
-        .poolSizeCount = 1,
-        .pPoolSizes = &pool_size
+        .poolSizeCount = pool_sizes.size(),
+        .pPoolSizes = pool_sizes.data()
     };
-
     VkResult res = vkCreateDescriptorPool(device(), &pool_info, nullptr, &m_descriptor_pool);
     vulkan_check_res(res, "failed to create descriptor pool");
 
@@ -613,18 +903,35 @@ bool Engine::create_descriptor_sets() {
             .offset = 0,
             .range = sizeof(UniformBufferObject),
         };
-        
-        VkWriteDescriptorSet descriptor_write{
-            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-            .dstSet = m_descriptor_sets[i],
-            .dstBinding = 0,
-            .dstArrayElement = 0,
-            .descriptorCount = 1,
-            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .pBufferInfo = &buffer_info
-        };
 
-        vkUpdateDescriptorSets(device(), 1, &descriptor_write, 0, nullptr);
+        VkDescriptorImageInfo image_info{
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .imageView = m_texture_image_view,
+            .sampler = m_texture_sampler
+        };
+        
+        auto descriptor_writes = std::to_array<VkWriteDescriptorSet>({
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = m_descriptor_sets[i],
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pBufferInfo = &buffer_info
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = m_descriptor_sets[i],
+                .dstBinding = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &image_info
+            }
+        });
+
+        vkUpdateDescriptorSets(device(), descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
     }
     
     return true;
@@ -671,18 +978,6 @@ bool Engine::create_index_buffer() {
 }
 
 bool Engine::create_command_buffers() {
-    // Create a grapics command pool.
-    VkCommandPoolCreateInfo pool_info{
-        .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-        .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-        .queueFamilyIndex = m_device->graphics_family(),
-    };
-
-    vulkan_check_res(
-        vkCreateCommandPool(device(), &pool_info, nullptr, &m_command_pool),
-        "failed to create command pool"
-    );
-
     // Allocate a command buffer for each swapchain image.
     VkCommandBufferAllocateInfo alloc_info_cmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -723,6 +1018,25 @@ bool Engine::create_sync_objects() {
     return true;
 }
 
+u32 Engine::choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_flags) {
+    VkPhysicalDeviceMemoryProperties mem_properties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device(), &mem_properties);
+
+    u32 memory_type_index = UINT32_MAX;
+    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
+        if ((memory_type_bits & (i << i)) &&
+            (mem_properties.memoryTypes[i].propertyFlags & mem_flags)) {
+            memory_type_index = i;
+            break;
+        }
+    }
+    if (memory_type_index == UINT32_MAX) {
+        throw std::runtime_error("failed to find suitable memory type for buffer");
+    }
+
+    return memory_type_index;
+}
+
 void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buf, VkDeviceMemory& mem) {
     VkBufferCreateInfo buffer_info{
         .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
@@ -740,21 +1054,7 @@ void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropert
     VkMemoryRequirements mem_requirements;
     vkGetBufferMemoryRequirements(device(), buf, &mem_requirements);
 
-    VkPhysicalDeviceMemoryProperties mem_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device(), &mem_properties);
-
-    // ?????
-    u32 memory_type_index = UINT32_MAX;
-    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
-        if ((mem_requirements.memoryTypeBits & (i << i)) &&
-            (mem_properties.memoryTypes[i].propertyFlags & mem_flags)) {
-            memory_type_index = i;
-            break;
-        }
-    }
-    if (memory_type_index == UINT32_MAX) {
-        throw std::runtime_error("failed to find suitable memory type for buffer");
-    }
+    u32 memory_type_index = choose_memory_type(mem_requirements.memoryTypeBits, mem_flags);
 
     VkMemoryAllocateInfo alloc_info{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
@@ -768,6 +1068,50 @@ void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropert
     );
 
     vkBindBufferMemory(device(), buf, mem, 0);
+}
+
+VkCommandBuffer Engine::begin_single_time_commands() {
+    VkCommandBufferAllocateInfo alloc_info_cmd{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .commandPool = m_transient_command_pool,
+        .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+        .commandBufferCount = 1 
+    };
+    VkCommandBuffer command_buffer;
+    vulkan_check_res(
+        vkAllocateCommandBuffers(device(), &alloc_info_cmd, &command_buffer),
+        "failed to allocate transfer command buffer"
+    );
+
+    VkCommandBufferBeginInfo begin_info{
+        .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT
+    };
+    vulkan_check_res(
+        vkBeginCommandBuffer(command_buffer, &begin_info),
+        "failed to begin single time command buffer"
+    );
+
+    return command_buffer;
+}
+
+void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
+    vulkan_check_res(
+        vkEndCommandBuffer(command_buffer),
+        "failed to end single time command buffer"
+    );
+
+    VkSubmitInfo submit_info{
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command_buffer
+    };
+
+    // TODO: Return a fence for the caller to wait on to allow less stalling
+    vkQueueSubmit(graphics_queue(), 1, &submit_info, VK_NULL_HANDLE);
+    vkQueueWaitIdle(graphics_queue());
+
+    vkFreeCommandBuffers(device(), m_transient_command_pool, 1, &command_buffer);
 }
 
 void Engine::recreate_swapchain() {

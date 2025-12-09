@@ -19,6 +19,7 @@ target_link_libraries(${PROJECT_NAME}
     spdlog::spdlog
     glm::glm
     imgui::imgui
+    stb::stb
 )
 
 if (APPLE)
@@ -26,7 +27,6 @@ if (APPLE)
         Vulkan::MoltenVK
     )
 endif()
-
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE "src/pch.hpp")
 
