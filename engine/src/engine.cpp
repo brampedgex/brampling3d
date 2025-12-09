@@ -722,10 +722,7 @@ bool Engine::create_texture_image() {
         1, &barrier
     );
 
-    end_single_time_commands(command_buffer);
-
     // Copy the staging buffer.
-    command_buffer = begin_single_time_commands();
 
     VkBufferImageCopy region{
         .bufferOffset = 0,
@@ -750,10 +747,7 @@ bool Engine::create_texture_image() {
         &region
     );
 
-    end_single_time_commands(command_buffer);
-
     // Prepare the texture for shader use.
-    command_buffer = begin_single_time_commands();
 
     VkImageMemoryBarrier barrier2{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
