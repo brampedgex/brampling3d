@@ -11,6 +11,11 @@ public: // Getters
     [[nodiscard]] auto graphics_queue() const { return m_graphics_queue; }
     [[nodiscard]] auto present_queue() const { return m_present_queue; }
 
+    [[nodiscard]] const auto& physical_device_properties() const { return m_physical_device_properties; }
+    [[nodiscard]] std::string_view device_name() const {
+        return m_physical_device_properties.deviceName;
+    }
+
     [[nodiscard]] u32 graphics_family() const { return m_graphics_family; }
     [[nodiscard]] u32 present_family() const { return m_present_family; }
 
@@ -22,6 +27,7 @@ private:
     VkInstance m_instance;
 
     VkPhysicalDevice m_physical_device;
+    VkPhysicalDeviceProperties m_physical_device_properties;
     u32 m_graphics_family;
     u32 m_present_family;
 

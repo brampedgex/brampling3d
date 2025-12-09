@@ -58,6 +58,8 @@ void VulkanDevice::choose_physical_device(VkSurfaceKHR surface) {
     m_physical_device = physical_device;
     m_graphics_family = graphics_family;
     m_present_family = present_family;
+
+    vkGetPhysicalDeviceProperties(m_physical_device, &m_physical_device_properties);
 }
 
 void VulkanDevice::create_device() {

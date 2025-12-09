@@ -809,9 +809,6 @@ void Engine::create_texture_image_view() {
 }
 
 void Engine::create_texture_sampler() {
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(physical_device(), &properties);
-
     VkSamplerCreateInfo sampler_info{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = VK_FILTER_LINEAR,
@@ -820,7 +817,7 @@ void Engine::create_texture_sampler() {
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .anisotropyEnable = VK_TRUE,
-        .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
+        .maxAnisotropy = m_device->physical_device_properties().limits.maxSamplerAnisotropy,
         .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
         .unnormalizedCoordinates = VK_FALSE,
         // TODO: what's this?
@@ -1287,8 +1284,11 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
     ImGui::NewFrame();
 
     ImGui::Begin("Debug");
+
+    imgui_text("Device: {}", m_device->device_name());
     auto& io = ImGui::GetIO();
     imgui_text("Frame time: {:.3f} ms ({:.1f} FPS)", 1000.0 / io.Framerate, io.Framerate);
+
     ImGui::End();
 
     ImGui::Render();
