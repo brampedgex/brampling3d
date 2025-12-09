@@ -39,11 +39,12 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
         swapchain_extent.height = window_height;
     }
     m_extent = swapchain_extent;
+    m_min_image_count = capabilities.minImageCount;
 
     VkSwapchainCreateInfoKHR swapchain_create_info{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = m_surface,
-        .minImageCount = capabilities.minImageCount,
+        .minImageCount = m_min_image_count,
         .imageFormat = m_surface_format.format,
         .imageColorSpace = m_surface_format.colorSpace,
         .imageExtent = swapchain_extent,

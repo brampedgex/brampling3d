@@ -38,6 +38,30 @@ CPMAddPackage("gh:gabime/spdlog@1.16.0")
 CPMAddPackage("gh:g-truc/glm#1.0.2")
 CPMAddPackage("gh:libsdl-org/SDL#release-3.2.28")
 
+# imgui, needs to be set up manually
+CPMAddPackage(
+    NAME imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui
+    VERSION 1.92.5
+    DOWNLOAD_ONLY YES
+)
+
+if (imgui_ADDED)
+    file(GLOB imgui_sources ${imgui_SOURCE_DIR}/*.cpp)
+    add_library(imgui STATIC 
+        ${imgui_sources}
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+    )
+    target_include_directories(imgui PUBLIC 
+        $<BUILD_INTERFACE:${imgui_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${imgui_SOURCE_DIR}/backends>
+    )
+    target_link_libraries(imgui PRIVATE SDL3::SDL3)
+
+    add_library(imgui::imgui ALIAS imgui)
+endif()
+
 # Portable macro for debug builds.
 add_compile_definitions($<$<CONFIG:Debug>:DEBUG_BUILD>)
 

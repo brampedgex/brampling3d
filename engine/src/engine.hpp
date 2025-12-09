@@ -21,6 +21,8 @@ private:
 
     bool init_graphics();
 
+    void init_imgui();
+
     bool create_vk_instance();
     bool create_window_surface();
     bool create_render_pass();
@@ -41,6 +43,7 @@ private:
     void update_graphics();
 
     void render_frame();
+    void render_imgui(VkCommandBuffer command_buffer);
 
 private:
     auto physical_device() const { return m_device->physical_device(); }

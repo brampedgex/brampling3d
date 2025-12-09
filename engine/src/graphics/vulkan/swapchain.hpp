@@ -25,6 +25,8 @@ public:     // Getters
     /// Returns the surface extent, i.e. the resolution.
     const auto& extent() const { return m_extent; }
 
+    auto min_image_count() const { return m_min_image_count; }
+
     usize image_count() const { return m_images.size(); } 
 
     auto submit_semaphore(usize index) const { return m_submit_semaphores[index]; }
@@ -49,4 +51,5 @@ private:
     
     VkSurfaceFormatKHR m_surface_format;
     VkExtent2D m_extent;
+    u32 m_min_image_count;
 };

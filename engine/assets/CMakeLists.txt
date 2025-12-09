@@ -54,7 +54,7 @@ function(CompileSlangShaders SRC)
 endfunction()
 
 
-CompileSlangShaders("shader.slang")
+CompileSlangShaders("shaders/color3d.slang")
 
 
 if (MSVC OR APPLE)

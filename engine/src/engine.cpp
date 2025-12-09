@@ -2,6 +2,10 @@
 
 #include <engine-generated/engine_assets.hpp>
 
+#include "imgui.hpp"
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_vulkan.h>
+
 struct Vertex {
     glm::vec3 pos;
     glm::vec3 col;
@@ -74,6 +78,8 @@ bool Engine::start() {
     if (!init_graphics())
         return false;
 
+    init_imgui();
+
     SDL_ShowWindow(m_window);
 
     spdlog::info("startup complete");
@@ -87,8 +93,12 @@ void Engine::run() {
         // Poll window events before rendering. (why is this not bound to the window?)
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            // Pass the event to imgui to handle IO
+            ImGui_ImplSDL3_ProcessEvent(&event);
+
             switch (event.type) {
             case SDL_EVENT_QUIT:
+            case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                 should_quit = true;
                 break;
             case SDL_EVENT_KEY_DOWN:
@@ -194,6 +204,44 @@ bool Engine::init_graphics() {
 
     spdlog::info("Vulkan initialized");
     return true;
+}
+
+void Engine::init_imgui() {
+    // Make sure imgui was linked correctly
+    IMGUI_CHECKVERSION();
+
+    ImGui::CreateContext();
+    auto& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable keyboard
+
+    // Setup style and scaling
+    float main_scale = SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
+    ImGui::StyleColorsDark();
+    auto& style = ImGui::GetStyle();
+    style.ScaleAllSizes(main_scale);
+    style.FontScaleDpi = main_scale;
+
+    // Setup backends
+    ImGui_ImplSDL3_InitForVulkan(m_window);
+    
+    // TODO: Global constant for api version so they dont get out of sync
+    ImGui_ImplVulkan_InitInfo init_info{
+        .ApiVersion = VK_API_VERSION_1_3,
+        .Instance = m_vk_instance,
+        .PhysicalDevice = physical_device(),
+        .Device = device(),
+        .QueueFamily = m_device->graphics_family(),
+        .Queue = graphics_queue(),
+        .DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE,
+        .MinImageCount = m_swapchain->min_image_count(),
+        .ImageCount = (u32) m_swapchain->image_count(),
+        .PipelineInfoMain = {
+            .RenderPass = m_render_pass,
+            .Subpass = 0,
+            .MSAASamples = VK_SAMPLE_COUNT_1_BIT
+        }
+    };
+    ImGui_ImplVulkan_Init(&init_info);
 }
 
 bool Engine::create_vk_instance() {
@@ -361,8 +409,8 @@ bool Engine::create_descriptor_set_layout() {
 }
 
 bool Engine::create_graphics_pipeline() {
-    std::vector<u8> vert_shader(_binary_shader_vertex_spv_start, _binary_shader_vertex_spv_end);
-    std::vector<u8> frag_shader(_binary_shader_fragment_spv_start, _binary_shader_fragment_spv_end);
+    std::vector<u8> vert_shader(_binary_shaders_color3d_vertex_spv_start, _binary_shaders_color3d_vertex_spv_end);
+    std::vector<u8> frag_shader(_binary_shaders_color3d_fragment_spv_start, _binary_shaders_color3d_fragment_spv_end);
 
     VkShaderModuleCreateInfo vert_module_info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -731,6 +779,9 @@ void Engine::recreate_swapchain() {
     // TODO: handle errors. just nuke everything if resize fails ig
     m_swapchain->create(m_window_width, m_window_height, m_render_pass);
 
+    // Update the ImGui backend
+    ImGui_ImplVulkan_SetMinImageCount(m_swapchain->min_image_count());
+
     spdlog::info("finished swapchain recreate");
 }
 
@@ -849,6 +900,10 @@ void Engine::render_frame() {
     vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
     vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
+
+    // Render imgui in the same pass.
+    render_imgui(command_buffer);
+
     vkCmdEndRenderPass(command_buffer);
 
     vulkan_check_res(
@@ -885,4 +940,19 @@ void Engine::render_frame() {
     }
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void Engine::render_imgui(VkCommandBuffer command_buffer) {
+    // TODO: A dedicated render pass for imgui.
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+
+    ImGui::Begin("Debug");
+    auto& io = ImGui::GetIO();
+    imgui_text("Frame time: {:.3f} ms ({:.1f} FPS)", 1000.0 / io.Framerate, io.Framerate);
+    ImGui::End();
+
+    ImGui::Render();
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
 }

@@ -18,6 +18,7 @@ target_link_libraries(${PROJECT_NAME}
     Vulkan::Vulkan
     spdlog::spdlog
     glm::glm
+    imgui::imgui
 )
 
 if (APPLE)
