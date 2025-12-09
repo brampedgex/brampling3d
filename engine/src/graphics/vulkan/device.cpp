@@ -41,7 +41,11 @@ void VulkanDevice::choose_physical_device(VkSurfaceKHR surface) {
             }
         }
 
-        if (graphics_found && present_found) {
+        VkPhysicalDeviceFeatures supported_features;
+        vkGetPhysicalDeviceFeatures(device, &supported_features);
+
+        // fuh kinda 1998 ass graphics card do you got with no sampler anisotropy 
+        if (graphics_found && present_found && supported_features.samplerAnisotropy) {
             physical_device = device;
             break;
         }
@@ -75,7 +79,9 @@ void VulkanDevice::create_device() {
         });
     }
 
-    VkPhysicalDeviceFeatures device_features{};
+    VkPhysicalDeviceFeatures device_features{
+        .samplerAnisotropy = VK_TRUE
+    };
 
     std::vector<const char*> device_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
