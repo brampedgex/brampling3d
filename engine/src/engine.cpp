@@ -100,6 +100,8 @@ constexpr bool ENABLE_VALIDATION_LAYERS = false;
 #endif
 
 void Engine::start() {
+    spdlog::info("starting engine");
+
     const auto start = std::chrono::steady_clock::now();
 
     if (!sdl3_init())

@@ -101,11 +101,28 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 
-# Ensure we re-run nasm when the asset files change.
 set(ENGINE_ASSETS_FULL ${ENGINE_ASSETS})
 list(TRANSFORM ENGINE_ASSETS_FULL PREPEND "${ASSETS_STAGING_DIR}/")
-add_custom_target(EngineAssets ALL DEPENDS ${ENGINE_ASSETS_FULL})
-add_dependencies(${PROJECT_NAME} EngineAssets)
 
-set_source_files_properties(${ENGINE_ASSETS_ASM} PROPERTIES LANGUAGE ASM)
-target_sources(${PROJECT_NAME} PRIVATE ${ENGINE_ASSETS_ASM})
+if (USE_NASM)
+    # Ensure we re-run nasm when the asset files change.
+    add_custom_target(EngineAssets ALL DEPENDS ${ENGINE_ASSETS_FULL})
+    add_dependencies(${PROJECT_NAME} EngineAssets)
+
+    set_source_files_properties(${ENGINE_ASSETS_ASM} PROPERTIES LANGUAGE ASM)
+    target_sources(${PROJECT_NAME} PRIVATE ${ENGINE_ASSETS_ASM})
+else()
+    # Vanilla GNU assembler and derivates don't properly generate depfiles so we have to do it by hand! yay!
+    set(ENGINE_ASSETS_OBJ "${GENERATED_SOURCE_DIR}/engine_assets.o")
+    add_custom_command(
+        OUTPUT ${ENGINE_ASSETS_OBJ}
+        MAIN_DEPENDENCY ${ENGINE_ASSETS_ASM}
+        DEPENDS ${ENGINE_ASSETS_FULL}
+        COMMAND ${CMAKE_ASM_COMPILER} -o ${ENGINE_ASSETS_OBJ} -c ${ENGINE_ASSETS_ASM} ${CMAKE_ASM_FLAGS}
+    )
+    
+    add_custom_target(EngineAssets ALL DEPENDS ${ENGINE_ASSETS_FULL} ${ENGINE_ASSETS_OBJ})
+    add_dependencies(${PROJECT_NAME} EngineAssets)
+
+    target_sources(${PROJECT_NAME} PRIVATE ${ENGINE_ASSETS_OBJ})
+endif()
