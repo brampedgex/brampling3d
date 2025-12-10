@@ -11,7 +11,7 @@ static constexpr auto ENGINE_VULKAN_API_VERSION = VK_API_VERSION_1_3;
 class Engine {
 public:
     /// Initialize SDL and Vulkan
-    bool start();
+    void start();
 
     /// Run the main event loop.
     void run();
@@ -19,28 +19,28 @@ public:
 private:
     void quit();
 
-    bool init_window();
+    void init_window();
 
-    bool init_graphics();
+    void init_graphics();
 
     void init_imgui();
 
-    bool create_vk_instance();
-    bool create_window_surface();
-    bool create_render_pass();
+    void create_instance();
+    void create_window_surface();
+    void create_render_pass();
     void create_command_pools();
-    bool create_descriptor_set_layout();
-    bool create_graphics_pipeline();
-    bool create_texture_image();
+    void create_descriptor_set_layout();
+    void create_graphics_pipeline();
+    void create_texture_image();
     void create_texture_image_view();
     void create_texture_sampler();
-    bool create_uniform_buffers();
-    bool create_descriptor_pool();
-    bool create_descriptor_sets();
-    bool create_vertex_buffer();
-    bool create_index_buffer();
-    bool create_command_buffers();
-    bool create_sync_objects();
+    void create_uniform_buffers();
+    void create_descriptor_pool();
+    void create_descriptor_sets();
+    void create_vertex_buffer();
+    void create_index_buffer();
+    void create_command_buffers();
+    void create_sync_objects();
 
     u32 choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_flags);
     void create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& mem);
@@ -68,7 +68,7 @@ private:
     u32 m_window_width;
     u32 m_window_height;
 
-    VkInstance m_vk_instance;
+    VkInstance m_instance;
     VkSurfaceKHR m_window_surface;
     
     std::unique_ptr<VulkanDevice> m_device;

@@ -28,7 +28,7 @@ void VulkanSwapchain::choose_surface_format() {
     m_surface_format = surface_format;
 }
 
-bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass render_pass) {
+void VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass render_pass) {
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device, m_surface, &capabilities);
 
@@ -57,10 +57,10 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
         .clipped = VK_TRUE
     };
     
-    if (vkCreateSwapchainKHR(m_device, &swapchain_create_info, nullptr, &m_swapchain) != VK_SUCCESS) {
-        spdlog::error("Failed to create swapchain");
-        return false;
-    }
+    vulkan_check_res(
+        vkCreateSwapchainKHR(m_device, &swapchain_create_info, nullptr, &m_swapchain),
+        "failed to create swapchain"
+    );
 
     // Get images.
     u32 image_count;
@@ -91,10 +91,10 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
             }
         };
 
-        if (vkCreateImageView(m_device, &view_info, nullptr, &m_image_views[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create image view {}", i);
-            return false;
-        }
+        vulkan_check_res(
+            vkCreateImageView(m_device, &view_info, nullptr, &m_image_views[i]),
+            "failed to create image view {}", i
+        );
     }
 
     // Create framebuffers for the passed in render pass for each image.
@@ -114,10 +114,10 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
             .layers = 1
         };
 
-        if (vkCreateFramebuffer(m_device, &framebuffer_info, nullptr, &m_framebuffers[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create framebuffer {}", i);
-            return false;
-        }
+        vulkan_check_res(
+            vkCreateFramebuffer(m_device, &framebuffer_info, nullptr, &m_framebuffers[i]),
+            "failed to create framebuffer {}", i
+        );
     }
 
     // Submit semaphores are managed in this class, because they need to be indexed by the image index instead of the current frame.
@@ -129,13 +129,11 @@ bool VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
     };
 
     for (usize i = 0; i < image_count; i++) {
-        if (vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_submit_semaphores[i]) != VK_SUCCESS) {
-            spdlog::error("failed to create submit semaphore {}", i);
-            return false;
-        }
+        vulkan_check_res(
+            vkCreateSemaphore(m_device, &semaphore_info, nullptr, &m_submit_semaphores[i]),
+            "failed to create submit semaphore {}", i
+        );
     }
-
-    return true;
 }
 
 void VulkanSwapchain::reset() {

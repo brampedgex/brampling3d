@@ -99,22 +99,22 @@ constexpr bool ENABLE_VALIDATION_LAYERS = true;
 constexpr bool ENABLE_VALIDATION_LAYERS = false;
 #endif
 
-bool Engine::start() {
+void Engine::start() {
+    const auto start = std::chrono::steady_clock::now();
+
     if (!sdl3_init())
-        return false;
+        throw std::runtime_error("Failed to initialize SDL");
 
-    if (!init_window())
-        return false;
-
-    if (!init_graphics())
-        return false;
-
+    init_window();
+    init_graphics();
     init_imgui();
 
     SDL_ShowWindow(m_window);
 
-    spdlog::info("startup complete");
-    return true;
+    // Calculate initialization time.
+    const auto end = std::chrono::steady_clock::now();
+    f32 ms = std::chrono::duration_cast<std::chrono::duration<f32, std::milli>>(end - start).count();
+    spdlog::info("startup complete ({:.3f} ms)", ms);
 }
 
 void Engine::run() {
@@ -157,7 +157,7 @@ void Engine::run() {
     quit();
 }
 
-bool Engine::init_window() {
+void Engine::init_window() {
     constexpr u32 DEFAULT_WIDTH = 960;
     constexpr u32 DEFAULT_HEIGHT = 640;
 
@@ -166,7 +166,7 @@ bool Engine::init_window() {
     // but for now this is fine.
     if ((m_window = SDL_CreateWindow("brampling3D", DEFAULT_WIDTH, DEFAULT_HEIGHT, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
         sdl3_perror("Failed to create window");
-        return false;
+        throw std::runtime_error("Window initialization failed");
     }
 
     int width, height;
@@ -178,7 +178,6 @@ bool Engine::init_window() {
     SDL_SetWindowMinimumSize(m_window, 640, 480);
 
     spdlog::info("Window initialized");
-    return true;
 }
 
 void Engine::quit() {
@@ -191,23 +190,19 @@ void Engine::quit() {
     SDL_Quit();
 }
 
-bool Engine::init_graphics() {
-    if (!create_vk_instance())
-        return false;
+void Engine::init_graphics() {
+    create_instance();
 
-    if (!create_window_surface())
-        return false;
+    create_window_surface();
     
-    m_device = std::make_unique<VulkanDevice>(m_vk_instance, m_window_surface);
+    m_device = std::make_unique<VulkanDevice>(m_instance, m_window_surface);
 
     // create_render_pass() depends on the surface format, which is chosen by VulkanSwapchain, before creating the actual swapchain.
     m_swapchain = std::make_unique<VulkanSwapchain>(physical_device(), device(), m_window_surface);
 
-    if (!create_render_pass())
-        return false;
+    create_render_pass();
 
-    if (!m_swapchain->create(m_window_width, m_window_height, m_render_pass))
-        return false;
+    m_swapchain->create(m_window_width, m_window_height, m_render_pass);
 
     create_command_pools();
 
@@ -215,35 +210,24 @@ bool Engine::init_graphics() {
     create_texture_image_view();
     create_texture_sampler();
 
-    if (!create_descriptor_set_layout())
-        return false;
+    create_descriptor_set_layout();
 
-    if (!create_graphics_pipeline())
-        return false;
+    create_graphics_pipeline();
 
-    if (!create_uniform_buffers())
-        return false;
+    create_uniform_buffers();
 
-    if (!create_descriptor_pool())
-        return false;
+    create_descriptor_pool();
 
-    if (!create_descriptor_sets())
-        return false;
+    create_descriptor_sets();
 
-    if (!create_vertex_buffer())
-        return false;
+    create_vertex_buffer();
+    create_index_buffer();
 
-    if (!create_index_buffer())
-        return false;
+    create_command_buffers();
 
-    if (!create_command_buffers())
-        return false;
-
-    if (!create_sync_objects())
-        return false;
+    create_sync_objects();
 
     spdlog::info("Vulkan initialized");
-    return true;
 }
 
 void Engine::init_imgui() {
@@ -267,7 +251,7 @@ void Engine::init_imgui() {
     // TODO: Global constant for api version so they dont get out of sync
     ImGui_ImplVulkan_InitInfo init_info{
         .ApiVersion = ENGINE_VULKAN_API_VERSION,
-        .Instance = m_vk_instance,
+        .Instance = m_instance,
         .PhysicalDevice = physical_device(),
         .Device = device(),
         .QueueFamily = m_device->graphics_family(),
@@ -282,15 +266,17 @@ void Engine::init_imgui() {
         }
     };
     ImGui_ImplVulkan_Init(&init_info);
+
+    spdlog::info("ImGui initialized");
 }
 
-bool Engine::create_vk_instance() {
+void Engine::create_instance() {
     // Get instance extensions needed for vkCreateInstance
     u32 extension_count;
     auto* extensions = SDL_Vulkan_GetInstanceExtensions(&extension_count);
     if (!extensions) {
         sdl3_perror("Failed to get vulkan instance extensions");
-        return false;
+        throw std::runtime_error("Vulkan initialization failed");
     }
 
     std::vector enable_extensions(extensions, extensions + extension_count);
@@ -339,7 +325,7 @@ bool Engine::create_vk_instance() {
     }
 
     // ApplicationInfo lets drivers enable application-specific optimizations.
-    // So Intel, NVIDIA, and AMD can implement the best optimizations for brampling3D
+    // So Intel, NVIDIA, and AMD can implement the best optimizations for brampling3D (future GOTY. thanks guys)
     VkApplicationInfo app_info{
         .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
         .pApplicationName = "brampling3D",
@@ -367,25 +353,19 @@ bool Engine::create_vk_instance() {
     };
 
     vulkan_check_res(
-        vkCreateInstance(&create_info, nullptr, &m_vk_instance),
+        vkCreateInstance(&create_info, nullptr, &m_instance),
         "Failed to create vulkan instance"
     );
-
-    spdlog::info("vulkan instance created");
-
-    return true;
 }
 
-bool Engine::create_window_surface() {
-    if (!SDL_Vulkan_CreateSurface(m_window, m_vk_instance, nullptr, &m_window_surface)) {
+void Engine::create_window_surface() {
+    if (!SDL_Vulkan_CreateSurface(m_window, m_instance, nullptr, &m_window_surface)) {
         sdl3_perror("Failed to create vulkan surface");
-        return false;
+        throw std::runtime_error("Vulkan initialization failed");
     }
-
-    return true;
 }
 
-bool Engine::create_render_pass() {
+void Engine::create_render_pass() {
     VkAttachmentDescription color_attachment{
         .format = m_swapchain->surface_format().format,
         .samples = VK_SAMPLE_COUNT_1_BIT,
@@ -420,8 +400,6 @@ bool Engine::create_render_pass() {
         vkCreateRenderPass(device(), &render_pass_info, nullptr, &m_render_pass),
         "failed to create render pass"
     );
-
-    return true;
 }
 
 void Engine::create_command_pools() {
@@ -448,7 +426,7 @@ void Engine::create_command_pools() {
     );
 }
 
-bool Engine::create_descriptor_set_layout() {
+void Engine::create_descriptor_set_layout() {
     VkDescriptorSetLayoutBinding ubo_binding{
         .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
@@ -477,11 +455,9 @@ bool Engine::create_descriptor_set_layout() {
         vkCreateDescriptorSetLayout(device(), &layout_create_info, nullptr, &m_descriptor_set_layout),
         "failed to create descriptor set layout"
     );
-
-    return true;
 }
 
-bool Engine::create_graphics_pipeline() {
+void Engine::create_graphics_pipeline() {
     std::vector<u8> vert_shader(_binary_shaders_color3d_vertex_spv_start, _binary_shaders_color3d_vertex_spv_end);
     std::vector<u8> frag_shader(_binary_shaders_color3d_fragment_spv_start, _binary_shaders_color3d_fragment_spv_end);
 
@@ -629,10 +605,9 @@ bool Engine::create_graphics_pipeline() {
 
     vkDestroyShaderModule(device(), frag_shader_module, nullptr);
     vkDestroyShaderModule(device(), vert_shader_module, nullptr);
-    return true;
 }
 
-bool Engine::create_texture_image() {
+void Engine::create_texture_image() {
     std::span<const u8> soggy_data{
         (const u8*) _binary_images_soggy_png_start,
         (const u8*) _binary_images_soggy_png_end,
@@ -785,8 +760,6 @@ bool Engine::create_texture_image() {
     // Cleanup staging buffer.
     vkDestroyBuffer(device(), staging_buffer, nullptr);
     vkFreeMemory(device(), staging_buffer_memory, nullptr);
-
-    return true;
 }
 
 void Engine::create_texture_image_view() {
@@ -835,7 +808,7 @@ void Engine::create_texture_sampler() {
     );
 }
 
-bool Engine::create_uniform_buffers() {
+void Engine::create_uniform_buffers() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         create_buffer(
             sizeof(UniformBufferObject),
@@ -845,11 +818,9 @@ bool Engine::create_uniform_buffers() {
             m_uniform_buffer_memory[i]
         );
     }
-
-    return true;
 }
 
-bool Engine::create_descriptor_pool() {
+void Engine::create_descriptor_pool() {
     VkDescriptorPoolSize ubo_pool_size{
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .descriptorCount = MAX_FRAMES_IN_FLIGHT
@@ -857,7 +828,7 @@ bool Engine::create_descriptor_pool() {
 
     VkDescriptorPoolSize sampler_pool_size{
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = MAX_FRAMES_IN_FLIGHT     // TODO does it need to be this and not one or is this a bug in the tutorial?
+        .descriptorCount = MAX_FRAMES_IN_FLIGHT
     };
 
     const auto pool_sizes = std::to_array({ ubo_pool_size, sampler_pool_size });
@@ -871,11 +842,9 @@ bool Engine::create_descriptor_pool() {
     };
     VkResult res = vkCreateDescriptorPool(device(), &pool_info, nullptr, &m_descriptor_pool);
     vulkan_check_res(res, "failed to create descriptor pool");
-
-    return true;
 }
 
-bool Engine::create_descriptor_sets() {
+void Engine::create_descriptor_sets() {
     std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT> layouts;
     std::ranges::fill(layouts, m_descriptor_set_layout);
 
@@ -925,11 +894,9 @@ bool Engine::create_descriptor_sets() {
 
         vkUpdateDescriptorSets(device(), descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
     }
-    
-    return true;
 }
 
-bool Engine::create_vertex_buffer() {
+void Engine::create_vertex_buffer() {
     usize size = sizeof(Vertex) * VERTICES.size();
 
     create_buffer(
@@ -945,11 +912,9 @@ bool Engine::create_vertex_buffer() {
     vkMapMemory(device(), m_vertex_buffer_memory, 0, size, 0, &data);
     memcpy(data, VERTICES.data(), size);
     vkUnmapMemory(device(), m_vertex_buffer_memory);
-
-    return true;
 }
 
-bool Engine::create_index_buffer() {
+void Engine::create_index_buffer() {
     usize size = sizeof(u16) * INDICES.size();
 
     create_buffer(
@@ -965,11 +930,9 @@ bool Engine::create_index_buffer() {
     vkMapMemory(device(), m_index_buffer_memory, 0, size, 0, &data);
     memcpy(data, INDICES.data(), size);
     vkUnmapMemory(device(), m_index_buffer_memory);
-
-    return true;
 }
 
-bool Engine::create_command_buffers() {
+void Engine::create_command_buffers() {
     // Allocate a command buffer for each swapchain image.
     VkCommandBufferAllocateInfo alloc_info_cmd{
         .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
@@ -982,11 +945,9 @@ bool Engine::create_command_buffers() {
         vkAllocateCommandBuffers(device(), &alloc_info_cmd, m_command_buffers.data()),
         "failed to allocate command buffers"
     );
-
-    return true;
 }
 
-bool Engine::create_sync_objects() {
+void Engine::create_sync_objects() {
     VkSemaphoreCreateInfo semaphore_info{
         .sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO
     };
@@ -1006,8 +967,6 @@ bool Engine::create_sync_objects() {
             "failed to create in-flight fence {}", i
         );
     }
-
-    return true;
 }
 
 u32 Engine::choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_flags) {

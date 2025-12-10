@@ -10,7 +10,7 @@ public:
     /// Creates the swapchain.
     /// window_width and window_height are the dimensions of the window.
     /// render_pass is the render pass used for Framebuffer creation.
-    bool create(u32 window_width, u32 window_height, VkRenderPass render_pass);
+    void create(u32 window_width, u32 window_height, VkRenderPass render_pass);
 
     /// Destroys the swapchain and re-queries the surface format.
     void reset();
