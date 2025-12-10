@@ -1058,7 +1058,8 @@ void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
         .pCommandBuffers = &command_buffer
     };
 
-    // TODO: Return a fence for the caller to wait on to allow less stalling
+    // TODO: Return a fence for the caller to wait on to allow less stalling 
+    // (let's us start single time tasks while others are already in flight and wait on all of them in one go... or just one since queues execute command buffers sequentially)
     vkQueueSubmit(graphics_queue(), 1, &submit_info, VK_NULL_HANDLE);
     vkQueueWaitIdle(graphics_queue());
 
@@ -1071,7 +1072,6 @@ void Engine::recreate_swapchain() {
 
     m_swapchain->reset();
     // TODO: recreate render pass if the surface format changed
-    // TODO: handle errors. just nuke everything if resize fails ig
     m_swapchain->create(m_window_width, m_window_height, m_render_pass);
 
     // Update the ImGui backend
@@ -1185,6 +1185,7 @@ void Engine::render_frame() {
 
     // Then draw.
     vkCmdBeginRenderPass(command_buffer, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
@@ -1208,7 +1209,7 @@ void Engine::render_frame() {
 
     VkSemaphore wait_semaphores[] = { image_available_semaphore };
     VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    VkSemaphore signal_semaphores[] = { m_swapchain->submit_semaphore(image_index) };
+    auto signal_semaphores = std::to_array({ m_swapchain->submit_semaphore(image_index) });
 
     // Submit the command buffer.
     VkSubmitInfo submit_info{
@@ -1218,14 +1219,14 @@ void Engine::render_frame() {
         .pWaitDstStageMask = wait_stages,
         .commandBufferCount = 1,
         .pCommandBuffers = &command_buffer,
-        .signalSemaphoreCount = 1,
-        .pSignalSemaphores = signal_semaphores
+        .signalSemaphoreCount = (u32) signal_semaphores.size(),
+        .pSignalSemaphores = signal_semaphores.data()
     };
 
     VkResult submit_result = vkQueueSubmit(graphics_queue(), 1, &submit_info, in_flight_fence);
     vulkan_check_res(submit_result, "failed to submit draw command buffer for {}", image_index);
 
-    VkResult present_result = m_swapchain->present(present_queue(), signal_semaphores[0], image_index);
+    VkResult present_result = m_swapchain->present(present_queue(), signal_semaphores, image_index);
 
     if (present_result == VK_SUBOPTIMAL_KHR || present_result == VK_ERROR_OUT_OF_DATE_KHR) {
         // Recreate swapchain next frame. We usually get this right before SDL sends a resize event anyway

@@ -148,13 +148,11 @@ VkResult VulkanSwapchain::acquire(VkSemaphore image_available_semaphore, u32& im
     return vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &image_index);
 }
 
-VkResult VulkanSwapchain::present(VkQueue present_queue, VkSemaphore wait_semaphore, u32 image_index) {
-    VkSemaphore wait_semaphores[] = { wait_semaphore };
-
+VkResult VulkanSwapchain::present(VkQueue present_queue, std::span<VkSemaphore> wait_semaphores, u32 image_index) {
     VkPresentInfoKHR present_info{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
-        .waitSemaphoreCount = 1,
-        .pWaitSemaphores = wait_semaphores,
+        .waitSemaphoreCount = (u32) wait_semaphores.size(),
+        .pWaitSemaphores = wait_semaphores.data(),
         .swapchainCount = 1,
         .pSwapchains = &m_swapchain,
         .pImageIndices = &image_index

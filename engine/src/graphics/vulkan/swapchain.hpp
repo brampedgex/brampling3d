@@ -16,7 +16,7 @@ public:
     void reset();
         
     VkResult acquire(VkSemaphore image_available_semaphore, u32& image_index);
-    VkResult present(VkQueue present_queue, VkSemaphore wait_semaphore, u32 image_index);
+    VkResult present(VkQueue present_queue, std::span<VkSemaphore> wait_semaphores, u32 image_index);
 
 public:     // Getters
     /// Returns the surface format. This can be called before swapchain creation.
