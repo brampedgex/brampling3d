@@ -158,10 +158,13 @@ void Engine::run() {
 }
 
 bool Engine::init_window() {
+    constexpr u32 DEFAULT_WIDTH = 960;
+    constexpr u32 DEFAULT_HEIGHT = 640;
+
     // Hide the window until we are done initializing GPU resources.
     // Maybe in the future we want to show some kind of splash screen when the loading process takes longer,
     // but for now this is fine.
-    if ((m_window = SDL_CreateWindow("brampling3D", 640, 480, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
+    if ((m_window = SDL_CreateWindow("brampling3D", DEFAULT_WIDTH, DEFAULT_HEIGHT, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
         sdl3_perror("Failed to create window");
         return false;
     }
@@ -263,7 +266,7 @@ void Engine::init_imgui() {
     
     // TODO: Global constant for api version so they dont get out of sync
     ImGui_ImplVulkan_InitInfo init_info{
-        .ApiVersion = VK_API_VERSION_1_3,
+        .ApiVersion = ENGINE_VULKAN_API_VERSION,
         .Instance = m_vk_instance,
         .PhysicalDevice = physical_device(),
         .Device = device(),
@@ -343,7 +346,7 @@ bool Engine::create_vk_instance() {
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
         .pEngineName = "brampling3D",
         .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-        .apiVersion = VK_API_VERSION_1_3
+        .apiVersion = ENGINE_VULKAN_API_VERSION 
     };
 
     VkInstanceCreateFlags create_flags = 0;
@@ -458,8 +461,8 @@ bool Engine::create_descriptor_set_layout() {
         .binding = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
         .pImmutableSamplers = nullptr,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT
     };
 
     const auto bindings = std::to_array({ ubo_binding, sampler_layout_binding });
@@ -658,16 +661,14 @@ bool Engine::create_texture_image() {
         .flags = 0,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .extent.width = image->width(),
-        .extent.height = image->height(),
-        .extent.depth = 1,
+        .extent = { .width = image->width(), .height = image->height(), .depth = 1 },
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
     };
     vulkan_check_res(
         vkCreateImage(device(), &image_info, nullptr, &m_texture_image),
@@ -694,6 +695,8 @@ bool Engine::create_texture_image() {
 
     VkImageMemoryBarrier barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = 0,
+        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         // We can transfer an image between queues this way. We could hypothetically use a separate queue to upload images, allowing async texture uploads.
@@ -707,8 +710,6 @@ bool Engine::create_texture_image() {
             .baseArrayLayer = 0,
             .layerCount = 1
         },
-        .srcAccessMask = 0, // TODO
-        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, // TODO
     };
 
     // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
@@ -751,6 +752,8 @@ bool Engine::create_texture_image() {
 
     VkImageMemoryBarrier barrier2{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         // We can transfer an image between queues this way. We could hypothetically use a separate queue to upload images, allowing async texture uploads.
@@ -764,8 +767,6 @@ bool Engine::create_texture_image() {
             .baseArrayLayer = 0,
             .layerCount = 1
         },
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT, // TODO
-        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT, // TODO
     };
 
     // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
@@ -813,20 +814,20 @@ void Engine::create_texture_sampler() {
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = VK_FILTER_LINEAR,
         .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
         .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
         .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0,
         .anisotropyEnable = VK_TRUE,
         .maxAnisotropy = m_device->physical_device_properties().limits.maxSamplerAnisotropy,
-        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-        .unnormalizedCoordinates = VK_FALSE,
         // TODO: what's this?
         .compareEnable = VK_FALSE,
         .compareOp = VK_COMPARE_OP_ALWAYS,
-        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .mipLodBias = 0,
         .minLod = 0,
-        .maxLod = 0
+        .maxLod = 0,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
     };
     vulkan_check_res(
         vkCreateSampler(device(), &sampler_info, nullptr, &m_texture_sampler),
@@ -896,9 +897,9 @@ bool Engine::create_descriptor_sets() {
         };
 
         VkDescriptorImageInfo image_info{
-            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            .sampler = m_texture_sampler,
             .imageView = m_texture_image_view,
-            .sampler = m_texture_sampler
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         };
         
         auto descriptor_writes = std::to_array<VkWriteDescriptorSet>({

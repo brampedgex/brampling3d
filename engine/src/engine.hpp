@@ -6,6 +6,8 @@
 #include "graphics/vulkan/device.hpp"
 #include "graphics/vulkan/swapchain.hpp"
 
+static constexpr auto ENGINE_VULKAN_API_VERSION = VK_API_VERSION_1_3;
+
 class Engine {
 public:
     /// Initialize SDL and Vulkan
