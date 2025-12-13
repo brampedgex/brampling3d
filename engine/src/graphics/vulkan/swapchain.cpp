@@ -28,7 +28,7 @@ void VulkanSwapchain::choose_surface_format() {
     m_surface_format = surface_format;
 }
 
-void VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass render_pass) {
+void VulkanSwapchain::create(u32 window_width, u32 window_height) {
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device, m_surface, &capabilities);
 
@@ -97,29 +97,6 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height, VkRenderPass r
         );
     }
 
-    // Create framebuffers for the passed in render pass for each image.
-    // TODO: There's a bunch of other parameters about the framebuffer creation we'll have to pass in as well...
-    // I should probably make the framebuffers externally with some kind of dependency system to recreate them when the swapchain is recreated.
-    m_framebuffers.resize(m_images.size());
-
-    for (u32 i = 0; i < m_framebuffers.size(); i++) {
-        VkImageView attachments[] = { m_image_views[i] };
-        VkFramebufferCreateInfo framebuffer_info{
-            .sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-            .renderPass = render_pass,
-            .attachmentCount = 1,
-            .pAttachments = attachments,
-            .width = m_extent.width,
-            .height = m_extent.height,
-            .layers = 1
-        };
-
-        vulkan_check_res(
-            vkCreateFramebuffer(m_device, &framebuffer_info, nullptr, &m_framebuffers[i]),
-            "failed to create framebuffer {}", i
-        );
-    }
-
     // Submit semaphores are managed in this class, because they need to be indexed by the image index instead of the current frame.
     // https://docs.vulkan.org/guide/latest/swapchain_semaphore_reuse.html
     m_submit_semaphores.resize(image_count);
@@ -168,15 +145,11 @@ void VulkanSwapchain::cleanup() {
     for (const auto image_view : m_image_views) {
         vkDestroyImageView(m_device, image_view, nullptr);
     }
-    for (const auto framebuffer : m_framebuffers) {
-        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
-    }
     for (const auto semaphore : m_submit_semaphores) {
         vkDestroySemaphore(m_device, semaphore, nullptr);
     }
 
     m_images.clear();
     m_image_views.clear();
-    m_framebuffers.clear();
     m_submit_semaphores.clear();
 }

@@ -5,6 +5,7 @@
 #include "imgui.hpp"
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include "stb.hpp"
 
@@ -199,12 +200,11 @@ void Engine::init_graphics() {
     
     m_device = std::make_unique<VulkanDevice>(m_instance, m_window_surface);
 
-    // create_render_pass() depends on the surface format, which is chosen by VulkanSwapchain, before creating the actual swapchain.
     m_swapchain = std::make_unique<VulkanSwapchain>(physical_device(), device(), m_window_surface);
 
-    create_render_pass();
+    // Do things that depend on surface_format...
 
-    m_swapchain->create(m_window_width, m_window_height, m_render_pass);
+    m_swapchain->create(m_window_width, m_window_height);
 
     create_command_pools();
 
@@ -250,7 +250,7 @@ void Engine::init_imgui() {
     // Setup backends
     ImGui_ImplSDL3_InitForVulkan(m_window);
     
-    // TODO: Global constant for api version so they dont get out of sync
+    const auto color_attachment_formats = std::to_array({ m_swapchain->surface_format().format });
     ImGui_ImplVulkan_InitInfo init_info{
         .ApiVersion = ENGINE_VULKAN_API_VERSION,
         .Instance = m_instance,
@@ -262,10 +262,14 @@ void Engine::init_imgui() {
         .MinImageCount = m_swapchain->min_image_count(),
         .ImageCount = (u32) m_swapchain->image_count(),
         .PipelineInfoMain = {
-            .RenderPass = m_render_pass,
             .Subpass = 0,
-            .MSAASamples = VK_SAMPLE_COUNT_1_BIT
-        }
+            .PipelineRenderingCreateInfo = {
+                .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+                .colorAttachmentCount = color_attachment_formats.size(),
+                .pColorAttachmentFormats = color_attachment_formats.data()
+            }
+        },
+        .UseDynamicRendering = true
     };
     ImGui_ImplVulkan_Init(&init_info);
 
@@ -365,43 +369,6 @@ void Engine::create_window_surface() {
         sdl3_perror("Failed to create vulkan surface");
         throw std::runtime_error("Vulkan initialization failed");
     }
-}
-
-void Engine::create_render_pass() {
-    VkAttachmentDescription color_attachment{
-        .format = m_swapchain->surface_format().format,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-    };
-
-    VkAttachmentReference color_attachment_ref{
-        .attachment = 0,
-        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-    };
-
-    VkSubpassDescription subpass{
-        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment_ref
-    };
-
-    VkRenderPassCreateInfo render_pass_info{
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-        .attachmentCount = 1,
-        .pAttachments = &color_attachment,
-        .subpassCount = 1,
-        .pSubpasses = &subpass
-    };
-
-    vulkan_check_res(
-        vkCreateRenderPass(device(), &render_pass_info, nullptr, &m_render_pass),
-        "failed to create render pass"
-    );
 }
 
 void Engine::create_command_pools() {
@@ -584,8 +551,17 @@ void Engine::create_graphics_pipeline() {
         "failed to create pipeline layout"
     );
 
+    const auto color_attachment_formats = std::to_array({ m_swapchain->surface_format().format });
+
+    VkPipelineRenderingCreateInfo pipeline_rendering_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = color_attachment_formats.size(),
+        .pColorAttachmentFormats = color_attachment_formats.data()
+    };
+
     VkGraphicsPipelineCreateInfo pipeline_info{
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &pipeline_rendering_info,
         .stageCount = 2,
         .pStages = shader_stages,
         .pVertexInputState = &vertex_input_info,
@@ -596,7 +572,8 @@ void Engine::create_graphics_pipeline() {
         .pColorBlendState = &color_blending,
         .pDynamicState = &dynamic_state_info,
         .layout = m_pipeline_layout,
-        .renderPass = m_render_pass,
+        // We use dynamic rendering instead of a render pass.
+        .renderPass = VK_NULL_HANDLE,
         .subpass = 0
     };
 
@@ -1074,7 +1051,7 @@ void Engine::recreate_swapchain() {
 
     m_swapchain->reset();
     // TODO: recreate render pass if the surface format changed
-    m_swapchain->create(m_window_width, m_window_height, m_render_pass);
+    m_swapchain->create(m_window_width, m_window_height);
 
     // Update the ImGui backend
     ImGui_ImplVulkan_SetMinImageCount(m_swapchain->min_image_count());
@@ -1136,7 +1113,7 @@ void Engine::render_frame() {
         auto now = std::chrono::steady_clock::now();
         static auto start = now;
 
-        f32 seconds = std::chrono::duration_cast<std::chrono::duration<float>>(now - start).count();
+        f32 seconds = std::chrono::duration_cast<std::chrono::duration<f32>>(now - start).count();
 
         auto extent = m_swapchain->extent();
         auto aspect = (f32) extent.width / extent.height;
@@ -1145,7 +1122,7 @@ void Engine::render_frame() {
         ubo.model = glm::rotate(glm::identity<glm::mat4x4>(), glm::radians(seconds * 180), glm::vec3(0, 1, 0));
         ubo.view = glm::lookAt(glm::vec3(6, 5, 6), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
         ubo.proj = glm::perspective(glm::radians(45.f), aspect, 0.1f, 100.f);
-        ubo.proj[1][1] *= -1; // vulkan coordinate system bullshit
+        ubo.proj[1][1] *= -1; // Flip vertically to correct the screen space coordinates
 
         auto mem = m_uniform_buffer_memory[m_current_frame];
 
@@ -1157,18 +1134,55 @@ void Engine::render_frame() {
 
     VkClearValue clear_col = {{{0.2, 0.2, 0.2, 1}}};
 
-    // Begin the render pass by clearing the image.
-    VkRenderPassBeginInfo rp_begin_info{
-        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-        .renderPass = m_render_pass,
-        .framebuffer = m_swapchain->framebuffer(image_index),
+    VkRenderingAttachmentInfo color_attachment{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = m_swapchain->image_view(image_index),
+        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = clear_col
+    };
+
+    VkRenderingInfo rendering_info{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
         .renderArea = {
             .offset = { 0, 0 },
             .extent = m_swapchain->extent()
         },
-        .clearValueCount = 1,
-        .pClearValues = &clear_col
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment
     };
+
+    // Transition the swapchain image to be suitable for rendering.
+    VkImageMemoryBarrier memory_barrier_1{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .image = m_swapchain->image(image_index),
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &memory_barrier_1
+    );
+
+    vkCmdBeginRendering(command_buffer, &rendering_info);
 
     // Set viewport and scissor, which are dynamic.
     VkViewport viewport{
@@ -1185,9 +1199,6 @@ void Engine::render_frame() {
         .extent = m_swapchain->extent()
     };
 
-    // Then draw.
-    vkCmdBeginRenderPass(command_buffer, &rp_begin_info, VK_SUBPASS_CONTENTS_INLINE);
-
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
@@ -1199,10 +1210,38 @@ void Engine::render_frame() {
     vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
 
-    // Render imgui in the same pass.
+    // Render imgui.
     render_imgui(command_buffer);
 
-    vkCmdEndRenderPass(command_buffer);
+    vkCmdEndRendering(command_buffer);
+
+    // Transition the image back to be suitable for presenting.
+    VkImageMemoryBarrier memory_barrier_2{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+        .image = m_swapchain->image(image_index),
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &memory_barrier_2
+    );
 
     vulkan_check_res(
         vkEndCommandBuffer(command_buffer),

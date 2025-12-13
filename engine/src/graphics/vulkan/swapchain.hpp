@@ -9,8 +9,7 @@ public:
 
     /// Creates the swapchain.
     /// window_width and window_height are the dimensions of the window.
-    /// render_pass is the render pass used for Framebuffer creation.
-    void create(u32 window_width, u32 window_height, VkRenderPass render_pass);
+    void create(u32 window_width, u32 window_height);
 
     /// Destroys the swapchain and re-queries the surface format.
     void reset();
@@ -31,8 +30,11 @@ public:     // Getters
 
     auto submit_semaphore(usize index) const { return m_submit_semaphores[index]; }
     
-    const auto& framebuffers() const { return m_framebuffers; }
-    auto framebuffer(usize index) const { return m_framebuffers[index]; }
+    const auto& image_views() const { return m_image_views; }
+    auto image_view(usize index) const { return m_image_views[index]; }
+
+    const auto& images() const { return m_images; }
+    auto image(usize index) const { return m_images[index]; }
 
 private:
     void choose_surface_format();
@@ -46,7 +48,6 @@ private:
     VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_image_views;
-    std::vector<VkFramebuffer> m_framebuffers;
     std::vector<VkSemaphore> m_submit_semaphores;
     
     VkSurfaceFormatKHR m_surface_format;

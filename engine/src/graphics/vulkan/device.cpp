@@ -1,4 +1,5 @@
 #include "device.hpp"
+#include <vulkan/vulkan_core.h>
 
 VulkanDevice::VulkanDevice(VkInstance instance, VkSurfaceKHR surface) : m_instance(instance) {
     choose_physical_device(surface);
@@ -98,8 +99,15 @@ void VulkanDevice::create_device() {
             device_extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
     }
 
+    // Enable dynamic rendering.
+    VkPhysicalDeviceDynamicRenderingFeatures dynamic_rendering_features{
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+        .dynamicRendering = true
+    };
+
     VkDeviceCreateInfo device_create_info{
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+        .pNext = &dynamic_rendering_features,
         .queueCreateInfoCount = (u32) queue_create_infos.size(),
         .pQueueCreateInfos = queue_create_infos.data(),
         .enabledExtensionCount = (u32) device_extensions.size(),

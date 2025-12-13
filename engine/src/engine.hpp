@@ -27,7 +27,6 @@ private:
 
     void create_instance();
     void create_window_surface();
-    void create_render_pass();
     void create_command_pools();
     void create_descriptor_set_layout();
     void create_graphics_pipeline();
@@ -77,7 +76,6 @@ private:
 
     VkDescriptorSetLayout m_descriptor_set_layout;
 
-    VkRenderPass m_render_pass;
     VkPipelineLayout m_pipeline_layout;
     VkPipeline m_pipeline;
 
