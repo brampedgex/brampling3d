@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../vulkan.hpp"
+#include "../../util/vulkan.hpp"
 
 class VulkanSwapchain {
 public:

@@ -1,5 +1,4 @@
 #include "device.hpp"
-#include <vulkan/vulkan_core.h>
 
 VulkanDevice::VulkanDevice(VkInstance instance, VkSurfaceKHR surface) : m_instance(instance) {
     choose_physical_device(surface);

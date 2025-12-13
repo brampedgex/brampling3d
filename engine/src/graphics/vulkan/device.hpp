@@ -1,4 +1,4 @@
-#include "../../vulkan.hpp"
+#include "../../util/vulkan.hpp"
 
 /// Manages the VkDevice and associated queues
 class VulkanDevice {

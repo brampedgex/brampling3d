@@ -1,7 +1,7 @@
 #pragma once
 
-#include "vulkan.hpp"
-#include "sdl3.hpp"
+#include "util/vulkan.hpp"
+#include "util/sdl3.hpp"
 
 #include "graphics/vulkan/device.hpp"
 #include "graphics/vulkan/swapchain.hpp"

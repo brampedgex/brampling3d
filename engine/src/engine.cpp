@@ -2,11 +2,11 @@
 
 #include <engine-generated/engine_assets.hpp>
 
-#include "imgui.hpp"
+#include "util/imgui.hpp"
+#include "util/stb.hpp"
+
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
-
-#include "stb.hpp"
 
 struct Vertex {
     glm::vec3 pos;
@@ -383,6 +383,7 @@ void Engine::create_command_pools() {
 
     // Create a separate command pool for transient (single time) command buffers.
     // Per the Vulkan spec this can allow the driver to optimize for this use case.
+    // (In practice, all the open source vulkan drivers I've seen don't do anything with that flag :()
     VkCommandPoolCreateInfo transient_pool_info{
         .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
         .flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT,
@@ -1137,7 +1138,7 @@ void Engine::render_frame() {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = m_swapchain->image_view(image_index),
         .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue = clear_col
     };
