@@ -95,6 +95,8 @@ if (APPLE)
     set(ASSET_BUILD_ARGS ${ASSET_BUILD_ARGS} "--apple")
 endif()
 set(ASSET_BUILD_ARGS ${ASSET_BUILD_ARGS} --files ${ENGINE_ASSETS})
+
+message("Running asset_build.py")
 execute_process(
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/asset_build.py" ${ASSET_BUILD_ARGS}
     WORKING_DIRECTORY ${ASSETS_STAGING_DIR}

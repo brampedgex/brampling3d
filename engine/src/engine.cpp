@@ -1,6 +1,6 @@
 #include "engine.hpp"
 
-#include <engine-generated/engine_assets.hpp>
+#include "assets.hpp"
 
 #include "util/imgui.hpp"
 #include "util/stb.hpp"
@@ -429,8 +429,8 @@ void Engine::create_descriptor_set_layout() {
 }
 
 void Engine::create_graphics_pipeline() {
-    std::vector<u8> vert_shader(_binary_shaders_color3d_vertex_spv_start, _binary_shaders_color3d_vertex_spv_end);
-    std::vector<u8> frag_shader(_binary_shaders_color3d_fragment_spv_start, _binary_shaders_color3d_fragment_spv_end);
+    std::vector<u8> vert_shader(std::from_range, get_asset<"shaders/color3d.vertex.spv">());
+    std::vector<u8> frag_shader(std::from_range, get_asset<"shaders/color3d.fragment.spv">());
 
     VkShaderModuleCreateInfo vert_module_info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -589,12 +589,7 @@ void Engine::create_graphics_pipeline() {
 }
 
 void Engine::create_texture_image() {
-    std::span<const u8> soggy_data{
-        (const u8*) _binary_images_soggy_png_start,
-        (const u8*) _binary_images_soggy_png_end,
-    };
-
-    auto image = stb::Image::from_bytes(soggy_data, 4);
+    auto image = stb::Image::from_bytes(get_asset<"images/soggy.png">(), 4);
     if (!image)
         throw std::runtime_error("failed to load soggy.png");
 

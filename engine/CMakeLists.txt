@@ -22,6 +22,7 @@ target_link_libraries(${PROJECT_NAME}
     glm::glm
     imgui::imgui
     stb::stb
+    libhat::libhat
 )
 
 if (APPLE)

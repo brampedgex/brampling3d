@@ -21,13 +21,28 @@ header_file.write("""
 
 #pragma once
 
+#include <libhat/fixed_string.hpp>
+
+template <hat::fixed_string Path>
+struct AssetResolver;
+
 """)
 
 for file in args.files:
     symbol_name = get_symbol_name(file)
     header_file.write(f"""
-extern "C" const char _binary_{symbol_name}_start[];
-extern "C" const char _binary_{symbol_name}_end[];
+extern "C" const u8 _binary_{symbol_name}_start[];
+extern "C" const u8 _binary_{symbol_name}_end[];
+
+template <>
+struct AssetResolver<"{file}"> {{
+    static constexpr std::span<const u8> get() {{
+        return std::span{{
+            _binary_{symbol_name}_start,
+            (usize) (_binary_{symbol_name}_end - _binary_{symbol_name}_start)
+        }};
+    }}
+}};
 """)
 
 header_file.close()
