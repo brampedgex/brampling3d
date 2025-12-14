@@ -45,6 +45,7 @@ struct Vertex {
     }
 };
 
+// Textured cube vertices
 constexpr auto VERTICES = std::to_array<Vertex>({
     // -x
     {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 0, 0 }},
@@ -78,6 +79,7 @@ constexpr auto VERTICES = std::to_array<Vertex>({
     {{  0.5, -0.5,  0.5 }, { 0, 1, 1 }, { 1, 1 }}
 });
 
+// Textured cube indices
 constexpr auto INDICES = std::to_array<u16>({
      0,  1,  2,  1,  3,  2,
      4,  5,  6,  5,  7,  6,
@@ -1138,7 +1140,7 @@ void Engine::render_frame() {
         .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
         .imageView = m_swapchain->image_view(image_index),
         .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
         .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
         .clearValue = clear_col
     };
@@ -1287,6 +1289,7 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
 
     ImGui::Begin("Debug");
 
+    imgui_text("brampling3D ({} {})", SDL_GetPlatform(), ENGINE_SYSTEM_PROCESSOR);
     imgui_text("Device: {}", m_device->device_name());
     auto& io = ImGui::GetIO();
     imgui_text("Frame time: {:.3f} ms ({:.1f} FPS)", 1000.0 / io.Framerate, io.Framerate);
