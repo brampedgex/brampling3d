@@ -4,11 +4,9 @@ project(engine)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Fixes gcc build on macOS
+# Fixes gcc build on macOS (we build for macOS with apple clang now so this isn't needed but i'll keep it here because it doesnt seem to do anything)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
-# Windows was made by monkeys with typewriters so we have to do this so that it can find the SDL dlls.
-# Why doesn't cmake just put the .dll I'm linking against, that I'm BUILDING IN THE SAME PROJECT, in the same directory as my executable??
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/.cpm")
@@ -17,7 +15,6 @@ include(cmake/CPM.cmake)
 # Packages provided by the host system.
 
 set(VULKAN_COMPONENTS)
-
 if (APPLE)
     # Use MoltenVK for Vulkan support on Apple
     set(VULKAN_COMPONENTS ${VULKAN_COMPONENTS} MoltenVK)

@@ -187,10 +187,61 @@ void Engine::init_window() {
 void Engine::quit() {
     spdlog::info("quitting");
 
-    // Destroy Vulkan resources before destroying the window, which will rug-pull our resources and make the destructors explode instead.
     vkDeviceWaitIdle(device());
-    m_swapchain.reset();
 
+    ImGui_ImplVulkan_Shutdown();
+
+    for (const auto fence : m_in_flight_fences) {
+        vkDestroyFence(device(), fence, nullptr);
+    }
+    for (const auto semaphore : m_image_available_semaphores) {
+        vkDestroySemaphore(device(), semaphore, nullptr);
+    }
+    
+    vkFreeCommandBuffers(device(), m_command_pool, m_command_buffers.size(), m_command_buffers.data());
+    vkDestroyCommandPool(device(), m_command_pool, nullptr);
+    vkDestroyCommandPool(device(), m_transient_command_pool, nullptr);
+
+    vkFreeDescriptorSets(device(), m_descriptor_pool, m_descriptor_sets.size(), m_descriptor_sets.data());
+    vkDestroyDescriptorPool(device(), m_descriptor_pool, nullptr);
+
+    for (const auto uniform_buffer_memory : m_uniform_buffer_memory) {
+        vkFreeMemory(device(), uniform_buffer_memory, nullptr);
+    }
+    for (const auto uniform_buffer : m_uniform_buffers) {
+        vkDestroyBuffer(device(), uniform_buffer, nullptr);
+    }
+
+    vkDestroySampler(device(), m_texture_sampler, nullptr);
+    vkDestroyImageView(device(), m_texture_image_view, nullptr);
+    vkFreeMemory(device(), m_texture_image_memory, nullptr);
+    vkDestroyImage(device(), m_texture_image, nullptr);
+
+    vkFreeMemory(device(), m_index_buffer_memory, nullptr);
+    vkDestroyBuffer(device(), m_index_buffer, nullptr);
+
+    vkFreeMemory(device(), m_vertex_buffer_memory, nullptr);
+    vkDestroyBuffer(device(), m_vertex_buffer, nullptr);
+
+    vkDestroyPipeline(device(), m_pipeline, nullptr);
+    vkDestroyPipelineLayout(device(), m_pipeline_layout, nullptr);
+
+    vkDestroyDescriptorSetLayout(device(), m_descriptor_set_layout, nullptr);
+
+    spdlog::info("destroying device");
+
+    vkDeviceWaitIdle(device());
+
+    m_swapchain.reset();
+    m_device.reset();
+
+    spdlog::info("device destroyed");
+
+    SDL_Vulkan_DestroySurface(m_instance, m_window_surface, nullptr);
+
+    vkDestroyInstance(m_instance, nullptr);
+
+    SDL_DestroyWindow(m_window);
     SDL_Quit();
 }
 

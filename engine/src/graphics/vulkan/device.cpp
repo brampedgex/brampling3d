@@ -122,3 +122,7 @@ void VulkanDevice::create_device() {
     vkGetDeviceQueue(m_device, m_graphics_family, 0, &m_graphics_queue);
     vkGetDeviceQueue(m_device, m_present_family, 0, &m_present_queue);
 }
+
+void VulkanDevice::cleanup() {
+    vkDestroyDevice(m_device, nullptr);
+}

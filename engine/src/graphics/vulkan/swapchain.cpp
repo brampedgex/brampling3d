@@ -53,10 +53,11 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height) {
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        // V-sync can be disabled by passing VK_PRESENT_MODE_IMMEDIATE_KHR.
+        // TODO: set_vsync() and vsync() to control this.
         .presentMode = VK_PRESENT_MODE_FIFO_KHR,
         .clipped = VK_TRUE
     };
-    
     vulkan_check_res(
         vkCreateSwapchainKHR(m_device, &swapchain_create_info, nullptr, &m_swapchain),
         "failed to create swapchain"

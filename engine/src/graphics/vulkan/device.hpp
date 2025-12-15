@@ -4,6 +4,9 @@
 class VulkanDevice {
 public:
     VulkanDevice(VkInstance instance, VkSurfaceKHR surface);
+    ~VulkanDevice() {
+        cleanup();
+    }
 
 public: // Getters
     [[nodiscard]] auto physical_device() const { return m_physical_device; }
@@ -22,6 +25,8 @@ public: // Getters
 private:
     void choose_physical_device(VkSurfaceKHR surface);
     void create_device();
+
+    void cleanup();
 
 private:
     VkInstance m_instance;

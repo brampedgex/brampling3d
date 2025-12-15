@@ -30,5 +30,6 @@ Sampler2D tex_sampler;
 
 [shader("fragment")]
 float3 fragment_main(VSOutput in) : SV_TARGET {
-    return tex_sampler.Sample(in.tex_coord).rgb * in.col;
+    float2 uv = in.tex_coord;
+    return tex_sampler.Sample(uv).rgb * in.col;
 }
