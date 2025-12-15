@@ -30,6 +30,7 @@ private:
     void create_command_pools();
     void create_descriptor_set_layout();
     void create_graphics_pipeline();
+    void create_depth_image();
     void create_texture_image();
     void create_texture_image_view();
     void create_texture_sampler();
@@ -85,6 +86,10 @@ private:
     VkBuffer m_index_buffer;
     VkDeviceMemory m_index_buffer_memory;
 
+    VkImage m_depth_image;
+    VkDeviceMemory m_depth_image_memory;
+    VkImageView m_depth_image_view;
+
     VkImage m_texture_image;
     VkDeviceMemory m_texture_image_memory;
     VkImageView m_texture_image_view;
@@ -104,6 +109,7 @@ private:
     std::array<VkFence, MAX_FRAMES_IN_FLIGHT> m_in_flight_fences;
 
     usize m_current_frame = 0;
+    u32 m_image_index;
     bool m_window_resized = false;
     bool m_need_swapchain_recreate = false;
 

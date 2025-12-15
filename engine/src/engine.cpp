@@ -218,6 +218,10 @@ void Engine::quit() {
     vkFreeMemory(device(), m_texture_image_memory, nullptr);
     vkDestroyImage(device(), m_texture_image, nullptr);
 
+    vkDestroyImageView(device(), m_depth_image_view, nullptr);
+    vkDestroyImage(device(), m_depth_image, nullptr);
+    vkFreeMemory(device(), m_depth_image_memory, nullptr);
+
     vkFreeMemory(device(), m_index_buffer_memory, nullptr);
     vkDestroyBuffer(device(), m_index_buffer, nullptr);
 
@@ -257,6 +261,8 @@ void Engine::init_graphics() {
     m_swapchain->create(m_window_width, m_window_height);
 
     create_command_pools();
+
+    create_depth_image();
 
     create_texture_image();
     create_texture_image_view();
@@ -565,6 +571,15 @@ void Engine::create_graphics_pipeline() {
         .sampleShadingEnable = VK_FALSE,
     };
 
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .depthBoundsTestEnable = VK_FALSE,
+        .stencilTestEnable = VK_FALSE
+    };
+
     VkPipelineColorBlendAttachmentState color_blend_attachments{
         .blendEnable = VK_FALSE,
         .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | 
@@ -607,7 +622,8 @@ void Engine::create_graphics_pipeline() {
     VkPipelineRenderingCreateInfo pipeline_rendering_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
         .colorAttachmentCount = color_attachment_formats.size(),
-        .pColorAttachmentFormats = color_attachment_formats.data()
+        .pColorAttachmentFormats = color_attachment_formats.data(),
+        .depthAttachmentFormat = VK_FORMAT_D32_SFLOAT,
     };
 
     VkGraphicsPipelineCreateInfo pipeline_info{
@@ -620,6 +636,7 @@ void Engine::create_graphics_pipeline() {
         .pViewportState = &viewport_state,
         .pRasterizationState = &rasterizer,
         .pMultisampleState = &multisampling,
+        .pDepthStencilState = &depth_stencil,
         .pColorBlendState = &color_blending,
         .pDynamicState = &dynamic_state_info,
         .layout = m_pipeline_layout,
@@ -636,6 +653,68 @@ void Engine::create_graphics_pipeline() {
     vkDestroyShaderModule(device(), frag_shader_module, nullptr);
     vkDestroyShaderModule(device(), vert_shader_module, nullptr);
 }
+
+void Engine::create_depth_image() {
+    // TODO: Test for allowed formats
+    const auto depth_format = VK_FORMAT_D32_SFLOAT;
+    u32 width = m_swapchain->extent().width;
+    u32 height = m_swapchain->extent().height;
+
+    // Create the texture image.
+    VkImageCreateInfo image_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = 0,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = depth_format,
+        .extent = { .width = width, .height = height, .depth = 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    vulkan_check_res(
+        vkCreateImage(device(), &image_info, nullptr, &m_depth_image),
+        "failed to create depth image"
+    );
+
+    // Allocate memory for the image.
+    VkMemoryRequirements mem_requirements;
+    vkGetImageMemoryRequirements(device(), m_depth_image, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_requirements.size,
+        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
+    };
+    vulkan_check_res(
+        vkAllocateMemory(device(), &alloc_info, nullptr, &m_depth_image_memory),
+        "failed to allocate depth image memory"
+    );
+
+    vkBindImageMemory(device(), m_depth_image, m_depth_image_memory, 0);
+
+    VkImageViewCreateInfo view_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = m_depth_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = depth_format,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+    vulkan_check_res(
+        vkCreateImageView(device(), &view_info, nullptr, &m_depth_image_view),
+        "failed to create depth image view"
+    );
+}
+
 
 void Engine::create_texture_image() {
     auto image = stb::Image::from_bytes(get_asset<"images/soggy.png">(), 4);
@@ -1130,8 +1209,7 @@ void Engine::render_frame() {
     vkWaitForFences(device(), 1, &in_flight_fence, VK_TRUE, UINT64_MAX);
     vkResetFences(device(), 1, &in_flight_fence);
 
-    u32 image_index;
-    VkResult acquire_result = m_swapchain->acquire(image_available_semaphore, image_index);
+    VkResult acquire_result = m_swapchain->acquire(image_available_semaphore, m_image_index);
 
     if (acquire_result == VK_ERROR_OUT_OF_DATE_KHR) {
         m_need_swapchain_recreate = true;
@@ -1178,35 +1256,13 @@ void Engine::render_frame() {
         vkUnmapMemory(device(), mem);
     }
 
-    VkClearValue clear_col = {{{0.2, 0.2, 0.2, 1}}};
-
-    VkRenderingAttachmentInfo color_attachment{
-        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
-        .imageView = m_swapchain->image_view(image_index),
-        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
-        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
-        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
-        .clearValue = clear_col
-    };
-
-    VkRenderingInfo rendering_info{
-        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
-        .renderArea = {
-            .offset = { 0, 0 },
-            .extent = m_swapchain->extent()
-        },
-        .layerCount = 1,
-        .colorAttachmentCount = 1,
-        .pColorAttachments = &color_attachment
-    };
-
     // Transition the swapchain image to be suitable for rendering.
     VkImageMemoryBarrier memory_barrier_1{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
         .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .image = m_swapchain->image(image_index),
+        .image = m_swapchain->image(m_image_index),
         .subresourceRange = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
@@ -1227,6 +1283,64 @@ void Engine::render_frame() {
         1,
         &memory_barrier_1
     );
+
+    VkImageMemoryBarrier depth_memory_barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
+        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .image = m_depth_image,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &depth_memory_barrier
+    );
+    
+    VkClearValue clear_col = { .color = { .float32 = {0.2, 0.2, 0.2, 1 } } };
+    VkClearValue clear_depth = { .depthStencil = { .depth = 1.0, .stencil = 0 } };
+
+    VkRenderingAttachmentInfo color_attachment{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = m_swapchain->image_view(m_image_index),
+        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+        .clearValue = clear_col
+    };
+
+    VkRenderingAttachmentInfo depth_attachment{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = m_depth_image_view,
+        .imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE,
+        .clearValue = clear_depth
+    };
+
+    VkRenderingInfo rendering_info{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = {
+            .offset = { 0, 0 },
+            .extent = m_swapchain->extent()
+        },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment,
+        .pDepthAttachment = &depth_attachment,
+    };
 
     vkCmdBeginRendering(command_buffer, &rendering_info);
 
@@ -1256,10 +1370,10 @@ void Engine::render_frame() {
     vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
     vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
 
+    vkCmdEndRendering(command_buffer);
+
     // Render imgui.
     render_imgui(command_buffer);
-
-    vkCmdEndRendering(command_buffer);
 
     // Transition the image back to be suitable for presenting.
     VkImageMemoryBarrier memory_barrier_2{
@@ -1267,7 +1381,7 @@ void Engine::render_frame() {
         .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
         .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        .image = m_swapchain->image(image_index),
+        .image = m_swapchain->image(m_image_index),
         .subresourceRange = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
@@ -1296,7 +1410,7 @@ void Engine::render_frame() {
 
     VkSemaphore wait_semaphores[] = { image_available_semaphore };
     VkPipelineStageFlags wait_stages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    auto signal_semaphores = std::to_array({ m_swapchain->submit_semaphore(image_index) });
+    auto signal_semaphores = std::to_array({ m_swapchain->submit_semaphore(m_image_index) });
 
     // Submit the command buffer.
     VkSubmitInfo submit_info{
@@ -1311,21 +1425,42 @@ void Engine::render_frame() {
     };
 
     VkResult submit_result = vkQueueSubmit(graphics_queue(), 1, &submit_info, in_flight_fence);
-    vulkan_check_res(submit_result, "failed to submit draw command buffer for {}", image_index);
+    vulkan_check_res(submit_result, "failed to submit draw command buffer for {}", m_image_index);
 
-    VkResult present_result = m_swapchain->present(present_queue(), signal_semaphores, image_index);
+    VkResult present_result = m_swapchain->present(present_queue(), signal_semaphores, m_image_index);
 
     if (present_result == VK_SUBOPTIMAL_KHR || present_result == VK_ERROR_OUT_OF_DATE_KHR) {
         // Recreate swapchain next frame. We usually get this right before SDL sends a resize event anyway
         m_need_swapchain_recreate = true;
     } else if (present_result != VK_SUCCESS) {
-        vulkan_check_res(present_result, "failed to present image {}", image_index);
+        vulkan_check_res(present_result, "failed to present image {}", m_image_index);
     }
 
     m_current_frame = (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void Engine::render_imgui(VkCommandBuffer command_buffer) {
+    VkRenderingAttachmentInfo color_attachment{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO,
+        .imageView = m_swapchain->image_view(m_image_index),
+        .imageLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+        .loadOp = VK_ATTACHMENT_LOAD_OP_LOAD,
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
+    };
+
+    VkRenderingInfo rendering_info{
+        .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
+        .renderArea = {
+            .offset = { 0, 0 },
+            .extent = m_swapchain->extent()
+        },
+        .layerCount = 1,
+        .colorAttachmentCount = 1,
+        .pColorAttachments = &color_attachment
+    };
+
+    vkCmdBeginRendering(command_buffer, &rendering_info);
+
     // TODO: A dedicated render pass for imgui.
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -1353,4 +1488,6 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
 
     ImGui::Render();
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), command_buffer);
+
+    vkCmdEndRendering(command_buffer);
 }

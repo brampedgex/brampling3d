@@ -28,6 +28,30 @@ void VulkanSwapchain::choose_surface_format() {
     m_surface_format = surface_format;
 }
 
+VkPresentModeKHR VulkanSwapchain::choose_present_mode() {
+    // VK_PRESENT_MODE_FIFO_KHR limits frame throughput to refresh rate which reduces power consumption.
+    if (m_vsync) {
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    u32 present_mode_count;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical_device, m_surface, &present_mode_count, nullptr);
+    std::vector<VkPresentModeKHR> present_modes(present_mode_count);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical_device, m_surface, &present_mode_count, present_modes.data());
+
+    // TODO: tearing setting that uses VK_PRESENT_MODE_IMMEDIATE_KHR
+    const auto preferred_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+
+    for (const auto present_mode : present_modes) {
+        if (present_mode == preferred_present_mode) {
+            return present_mode;
+        }
+    }
+
+    // VK_PRESENT_MODE_FIFO_KHR is always supported.
+    return VK_PRESENT_MODE_FIFO_KHR;
+}
+
 void VulkanSwapchain::create(u32 window_width, u32 window_height) {
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device, m_surface, &capabilities);
@@ -41,8 +65,6 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height) {
     m_extent = swapchain_extent;
     m_min_image_count = capabilities.minImageCount;
 
-    const auto present_mode = m_vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
-
     VkSwapchainCreateInfoKHR swapchain_create_info{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = m_surface,
@@ -55,7 +77,7 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height) {
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        .presentMode = present_mode, 
+        .presentMode = choose_present_mode(), 
         .clipped = VK_TRUE
     };
     vulkan_check_res(

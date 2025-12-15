@@ -42,6 +42,7 @@ public:     // Getters
 
 private:
     void choose_surface_format();
+    VkPresentModeKHR choose_present_mode();
     void cleanup();
 
 private:
