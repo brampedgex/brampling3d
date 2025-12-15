@@ -41,6 +41,8 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height) {
     m_extent = swapchain_extent;
     m_min_image_count = capabilities.minImageCount;
 
+    const auto present_mode = m_vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
+
     VkSwapchainCreateInfoKHR swapchain_create_info{
         .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
         .surface = m_surface,
@@ -53,9 +55,7 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height) {
         .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
         .preTransform = capabilities.currentTransform,
         .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-        // V-sync can be disabled by passing VK_PRESENT_MODE_IMMEDIATE_KHR.
-        // TODO: set_vsync() and vsync() to control this.
-        .presentMode = VK_PRESENT_MODE_FIFO_KHR,
+        .presentMode = present_mode, 
         .clipped = VK_TRUE
     };
     vulkan_check_res(

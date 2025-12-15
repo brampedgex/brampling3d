@@ -187,6 +187,7 @@ void Engine::init_window() {
 void Engine::quit() {
     spdlog::info("quitting");
 
+    // Make sure the GPU isn't doing anything with the resources we are about to destroy.
     vkDeviceWaitIdle(device());
 
     ImGui_ImplVulkan_Shutdown();
@@ -228,14 +229,10 @@ void Engine::quit() {
 
     vkDestroyDescriptorSetLayout(device(), m_descriptor_set_layout, nullptr);
 
-    spdlog::info("destroying device");
-
     vkDeviceWaitIdle(device());
 
     m_swapchain.reset();
     m_device.reset();
-
-    spdlog::info("device destroyed");
 
     SDL_Vulkan_DestroySurface(m_instance, m_window_surface, nullptr);
 
@@ -243,6 +240,8 @@ void Engine::quit() {
 
     SDL_DestroyWindow(m_window);
     SDL_Quit();
+
+    spdlog::info("Goodbye!");
 }
 
 void Engine::init_graphics() {
@@ -251,7 +250,6 @@ void Engine::init_graphics() {
     create_window_surface();
     
     m_device = std::make_unique<VulkanDevice>(m_instance, m_window_surface);
-
     m_swapchain = std::make_unique<VulkanSwapchain>(physical_device(), device(), m_window_surface);
 
     // Do things that depend on surface_format...
@@ -1339,6 +1337,17 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
     imgui_text("Device: {}", m_device->device_name());
     auto& io = ImGui::GetIO();
     imgui_text("Frame time: {:.3f} ms ({:.1f} FPS)", 1000.0 / io.Framerate, io.Framerate);
+
+    ImGui::Separator();
+
+    imgui_text("Settings");
+    ImGui::Checkbox("V-sync", &m_vsync);
+
+    if (m_vsync != m_swapchain->vsync()) {
+        // Update swapchain if vsync setting changed
+        m_swapchain->set_vsync(m_vsync);
+        m_need_swapchain_recreate = true;
+    }
 
     ImGui::End();
 

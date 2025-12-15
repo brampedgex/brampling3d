@@ -17,6 +17,10 @@ public:
     VkResult acquire(VkSemaphore image_available_semaphore, u32& image_index);
     VkResult present(VkQueue present_queue, std::span<VkSemaphore> wait_semaphores, u32 image_index);
 
+public:     // Settings
+    bool vsync() const { return m_vsync; }
+    void set_vsync(bool vsync) { m_vsync = vsync; }
+
 public:     // Getters
     /// Returns the surface format. This can be called before swapchain creation.
     const auto& surface_format() const { return m_surface_format; }
@@ -53,4 +57,6 @@ private:
     VkSurfaceFormatKHR m_surface_format;
     VkExtent2D m_extent;
     u32 m_min_image_count;
+
+    bool m_vsync = true;
 };

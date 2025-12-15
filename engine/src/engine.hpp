@@ -106,4 +106,7 @@ private:
     usize m_current_frame = 0;
     bool m_window_resized = false;
     bool m_need_swapchain_recreate = false;
+
+
+    bool m_vsync = true;
 };
