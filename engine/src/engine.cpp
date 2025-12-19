@@ -1286,9 +1286,26 @@ void Engine::recreate_swapchain() {
     // Wait for the device to be idle before recreating the swapchain
     vkDeviceWaitIdle(device());
 
+    auto last_extent = m_swapchain->extent();
+
     m_swapchain->reset();
-    // TODO: recreate render pass if the surface format changed
+
+    // Do things that may depend on the surface format here...
+
     m_swapchain->create(m_window_width, m_window_height);
+
+    auto extent = m_swapchain->extent();
+
+    if (last_extent.width != extent.width || last_extent.height != extent.height) {
+        // Size changed.
+        
+        // TODO: Re-use existing image/memory if possible (eg. the new extent is smaller than the old one)
+        vkDestroyImageView(device(), m_depth_image_view, nullptr);
+        vkDestroyImage(device(), m_depth_image, nullptr);
+        vkFreeMemory(device(), m_depth_image_memory, nullptr);
+
+        create_depth_image();
+    }
 
     // Update the ImGui backend
     ImGui_ImplVulkan_SetMinImageCount(m_swapchain->min_image_count());
