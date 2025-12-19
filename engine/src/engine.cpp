@@ -76,7 +76,7 @@ constexpr auto VERTICES = std::to_array<Vertex>({
     {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }, { 0, 0 }},
     {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 1, 0 }},
     {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 0, 1 }},
-    {{  0.5, -0.5,  0.5 }, { 0, 1, 1 }, { 1, 1 }}
+    {{  0.5, -0.5,  0.5 }, { 1, 0, 1 }, { 1, 1 }}
 });
 
 // Textured cube indices
@@ -89,10 +89,13 @@ constexpr auto INDICES = std::to_array<u16>({
     20, 21, 22, 21, 23, 22,
 });
 
-struct UniformBufferObject {
-    glm::mat4x4 model;
+struct CameraUBO {
     glm::mat4x4 view;
     glm::mat4x4 proj;
+};
+
+struct CubeUBO {
+    glm::mat4x4 model;
 };
 
 #ifdef DEBUG_BUILD
@@ -203,13 +206,24 @@ void Engine::quit() {
     vkDestroyCommandPool(device(), m_command_pool, nullptr);
     vkDestroyCommandPool(device(), m_transient_command_pool, nullptr);
 
+    for (const auto& object : m_scene_objects) {
+        for (const auto ubo : object.m_ubos) {
+            vkDestroyBuffer(device(), ubo, nullptr);
+        }
+        for (const auto mem : object.m_ubo_memory) {
+            vkUnmapMemory(device(), mem);
+            vkFreeMemory(device(), mem, nullptr);
+        }
+        vkFreeDescriptorSets(device(), m_descriptor_pool, object.m_descriptor_sets.size(), object.m_descriptor_sets.data());
+    }
+
     vkFreeDescriptorSets(device(), m_descriptor_pool, m_descriptor_sets.size(), m_descriptor_sets.data());
     vkDestroyDescriptorPool(device(), m_descriptor_pool, nullptr);
 
-    for (const auto uniform_buffer_memory : m_uniform_buffer_memory) {
+    for (const auto uniform_buffer_memory : m_camera_ubo_memory) {
         vkFreeMemory(device(), uniform_buffer_memory, nullptr);
     }
-    for (const auto uniform_buffer : m_uniform_buffers) {
+    for (const auto uniform_buffer : m_camera_ubos) {
         vkDestroyBuffer(device(), uniform_buffer, nullptr);
     }
 
@@ -232,6 +246,7 @@ void Engine::quit() {
     vkDestroyPipelineLayout(device(), m_pipeline_layout, nullptr);
 
     vkDestroyDescriptorSetLayout(device(), m_descriptor_set_layout, nullptr);
+    vkDestroyDescriptorSetLayout(device(), m_scene_object_descriptor_set_layout, nullptr);
 
     vkDeviceWaitIdle(device());
 
@@ -268,11 +283,11 @@ void Engine::init_graphics() {
     create_texture_image_view();
     create_texture_sampler();
 
-    create_descriptor_set_layout();
+    create_descriptor_set_layouts();
 
     create_graphics_pipeline();
 
-    create_uniform_buffers();
+    create_camera_ubos();
 
     create_descriptor_pool();
 
@@ -280,6 +295,8 @@ void Engine::init_graphics() {
 
     create_vertex_buffer();
     create_index_buffer();
+
+    create_scene_objects();
 
     create_command_buffers();
 
@@ -452,35 +469,60 @@ void Engine::create_command_pools() {
     );
 }
 
-void Engine::create_descriptor_set_layout() {
-    VkDescriptorSetLayoutBinding ubo_binding{
-        .binding = 0,
-        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
-        .pImmutableSamplers = nullptr
-    }; 
+void Engine::create_descriptor_set_layouts() {
+    {
+        VkDescriptorSetLayoutBinding ubo_binding{
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .pImmutableSamplers = nullptr
+        }; 
 
-    VkDescriptorSetLayoutBinding sampler_layout_binding{
-        .binding = 1,
-        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
-        .pImmutableSamplers = nullptr,
-    };
+        VkDescriptorSetLayoutBinding sampler_layout_binding{
+            .binding = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .pImmutableSamplers = nullptr,
+        };
 
-    const auto bindings = std::to_array({ ubo_binding, sampler_layout_binding });
+        const auto bindings = std::to_array({ ubo_binding, sampler_layout_binding });
 
-    VkDescriptorSetLayoutCreateInfo layout_create_info{
-        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
-        .flags = 0,
-        .bindingCount = bindings.size(),
-        .pBindings = bindings.data()
-    };
-    vulkan_check_res(
-        vkCreateDescriptorSetLayout(device(), &layout_create_info, nullptr, &m_descriptor_set_layout),
-        "failed to create descriptor set layout"
-    );
+        VkDescriptorSetLayoutCreateInfo layout_create_info{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .flags = 0,
+            .bindingCount = bindings.size(),
+            .pBindings = bindings.data()
+        };
+        vulkan_check_res(
+            vkCreateDescriptorSetLayout(device(), &layout_create_info, nullptr, &m_descriptor_set_layout),
+            "failed to create descriptor set layout"
+        );
+    }
+
+    {
+        VkDescriptorSetLayoutBinding ubo_binding{
+            .binding = 0,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+            .pImmutableSamplers = nullptr
+        }; 
+
+        const auto bindings = std::to_array({ ubo_binding });
+
+        VkDescriptorSetLayoutCreateInfo layout_create_info{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+            .flags = 0,
+            .bindingCount = bindings.size(),
+            .pBindings = bindings.data()
+        };
+        vulkan_check_res(
+            vkCreateDescriptorSetLayout(device(), &layout_create_info, nullptr, &m_scene_object_descriptor_set_layout),
+            "failed to create scene object descriptor set layout"
+        );
+    }
 }
 
 void Engine::create_graphics_pipeline() {
@@ -606,10 +648,11 @@ void Engine::create_graphics_pipeline() {
         .pDynamicStates = dynamic_state
     };
 
+    const auto set_layouts = std::to_array({ m_descriptor_set_layout, m_scene_object_descriptor_set_layout });
     VkPipelineLayoutCreateInfo pipeline_layout_info{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 1,
-        .pSetLayouts = &m_descriptor_set_layout
+        .setLayoutCount = (u32) set_layouts.size(),
+        .pSetLayouts = set_layouts.data()
     };
 
     vulkan_check_res(
@@ -912,14 +955,14 @@ void Engine::create_texture_sampler() {
     );
 }
 
-void Engine::create_uniform_buffers() {
+void Engine::create_camera_ubos() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         create_buffer(
-            sizeof(UniformBufferObject),
+            sizeof(CameraUBO),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            m_uniform_buffers[i],
-            m_uniform_buffer_memory[i]
+            m_camera_ubos[i],
+            m_camera_ubo_memory[i]
         );
     }
 }
@@ -927,7 +970,7 @@ void Engine::create_uniform_buffers() {
 void Engine::create_descriptor_pool() {
     VkDescriptorPoolSize ubo_pool_size{
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = MAX_FRAMES_IN_FLIGHT
+        .descriptorCount = MAX_FRAMES_IN_FLIGHT + MAX_FRAMES_IN_FLIGHT * 2
     };
 
     VkDescriptorPoolSize sampler_pool_size{
@@ -940,7 +983,7 @@ void Engine::create_descriptor_pool() {
     VkDescriptorPoolCreateInfo pool_info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-        .maxSets = MAX_FRAMES_IN_FLIGHT,
+        .maxSets = MAX_FRAMES_IN_FLIGHT + MAX_FRAMES_IN_FLIGHT * 2,
         .poolSizeCount = pool_sizes.size(),
         .pPoolSizes = pool_sizes.data()
     };
@@ -964,9 +1007,9 @@ void Engine::create_descriptor_sets() {
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo buffer_info{
-            .buffer = m_uniform_buffers[i],
+            .buffer = m_camera_ubos[i],
             .offset = 0,
-            .range = sizeof(UniformBufferObject),
+            .range = sizeof(CameraUBO),
         };
 
         VkDescriptorImageInfo image_info{
@@ -1034,6 +1077,75 @@ void Engine::create_index_buffer() {
     vkMapMemory(device(), m_index_buffer_memory, 0, size, 0, &data);
     memcpy(data, INDICES.data(), size);
     vkUnmapMemory(device(), m_index_buffer_memory);
+}
+
+void Engine::create_scene_objects() {
+    const auto poses = std::to_array<glm::vec3>({
+        { 0, 0, 0 },
+        { 1.5, 0, 1.5 },
+    });
+
+    const auto rotate_axes = std::to_array<glm::vec3>({
+        { 0, 1, 0 },
+        { 0, 0, 1 },
+    });
+
+    for (usize i = 0; i < poses.size(); i++) {
+        CubeObject cube{
+            .m_pos = poses[i],
+            .m_rotate_axis = rotate_axes[i],
+        };
+
+        for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            create_buffer(
+                sizeof(CubeUBO),
+                VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                cube.m_ubos[i],
+                cube.m_ubo_memory[i]
+            );
+
+            vkMapMemory(device(), cube.m_ubo_memory[i], 0, sizeof(CubeUBO), 0, &cube.m_ubo_data[i]);
+        }
+
+        std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT> layouts;
+        std::ranges::fill(layouts, m_scene_object_descriptor_set_layout);
+
+        VkDescriptorSetAllocateInfo alloc_info{
+            .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+            .descriptorPool = m_descriptor_pool,
+            .descriptorSetCount = (u32) layouts.size(),
+            .pSetLayouts = layouts.data()
+        };
+
+        vulkan_check_res(
+            vkAllocateDescriptorSets(device(), &alloc_info, cube.m_descriptor_sets.data()),
+            "failed to allocate CubeObject descriptor sets"
+        );
+
+        for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+            VkDescriptorBufferInfo buffer_info{
+                .buffer = cube.m_ubos[i],
+                .offset = 0,
+                .range = sizeof(CubeUBO),
+            };
+
+            auto descriptor_writes = std::to_array<VkWriteDescriptorSet>({
+                {
+                    .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstSet = cube.m_descriptor_sets[i],
+                    .dstBinding = 0,
+                    .dstArrayElement = 0,
+                    .descriptorCount = 1,
+                    .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                    .pBufferInfo = &buffer_info,
+                }
+            });
+            vkUpdateDescriptorSets(device(), descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
+        }
+
+        m_scene_objects.push_back(cube);
+    }
 }
 
 void Engine::create_command_buffers() {
@@ -1242,18 +1354,30 @@ void Engine::render_frame() {
         auto extent = m_swapchain->extent();
         auto aspect = (f32) extent.width / extent.height;
 
-        UniformBufferObject ubo;
-        ubo.model = glm::rotate(glm::identity<glm::mat4x4>(), glm::radians(seconds * 180), glm::vec3(0, 1, 0));
-        ubo.view = glm::lookAt(glm::vec3(6, 5, 6), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-        ubo.proj = glm::perspective(glm::radians(45.f), aspect, 0.1f, 100.f);
-        ubo.proj[1][1] *= -1; // Flip vertically to correct the screen space coordinates
+        CameraUBO camera_ubo;
+        camera_ubo.view = glm::lookAt(glm::vec3(6, 5, 6), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
+        camera_ubo.proj = glm::perspective(glm::radians(45.f), aspect, 0.1f, 100.f);
+        camera_ubo.proj[1][1] *= -1; // Flip vertically to correct the screen space coordinates
 
-        auto mem = m_uniform_buffer_memory[m_current_frame];
-
+        // Write Camera UBO.
+        auto mem = m_camera_ubo_memory[m_current_frame];
         void* data;
-        vkMapMemory(device(), mem, 0, sizeof(UniformBufferObject), 0, &data);
-        memcpy(data, &ubo, sizeof(UniformBufferObject));
+        vkMapMemory(device(), mem, 0, sizeof(CameraUBO), 0, &data);
+        memcpy(data, &camera_ubo, sizeof(CameraUBO));
         vkUnmapMemory(device(), mem);
+
+        for (const auto& object : m_scene_objects) {
+            auto id = glm::identity<glm::mat4x4>();
+            auto rotate = glm::rotate(id, glm::radians(seconds * 180), object.m_rotate_axis);
+            auto translate = glm::translate(id, object.m_pos);
+
+            CubeUBO cube_ubo{
+                .model = rotate * translate
+            };
+
+            // Write Cube UBO.
+            memcpy(object.m_ubo_data[m_current_frame], &cube_ubo, sizeof(CubeUBO));
+        }
     }
 
     // Transition the swapchain image to be suitable for rendering.
@@ -1351,7 +1475,7 @@ void Engine::render_frame() {
         .width = (f32) m_swapchain->extent().width,
         .height = (f32) m_swapchain->extent().height,
         .minDepth = 0,
-        .maxDepth = 0
+        .maxDepth = 1
     };
 
     VkRect2D scissor{
@@ -1359,16 +1483,23 @@ void Engine::render_frame() {
         .extent = m_swapchain->extent()
     };
 
+    VkBuffer vertex_bufs[] = { m_vertex_buffer };
+    VkDeviceSize offsets[] = { 0 };
+
     vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
     vkCmdSetViewport(command_buffer, 0, 1, &viewport);
     vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-    VkDescriptorSet descriptor_sets[] = { m_descriptor_sets[m_current_frame] };
-    VkBuffer vertex_bufs[] = { m_vertex_buffer };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, 1, descriptor_sets, 0, nullptr);
     vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
     vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
-    vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
+
+    for (const auto& object : m_scene_objects) {
+        // Bind the object's descriptor set.
+        const auto descriptor_sets = std::to_array({ m_descriptor_sets[m_current_frame], object.m_descriptor_sets[m_current_frame] });
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
+
+        // Draw the object.
+        vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
+    }
 
     vkCmdEndRendering(command_buffer);
 

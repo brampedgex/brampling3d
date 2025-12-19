@@ -28,17 +28,18 @@ private:
     void create_instance();
     void create_window_surface();
     void create_command_pools();
-    void create_descriptor_set_layout();
+    void create_descriptor_set_layouts();
     void create_graphics_pipeline();
     void create_depth_image();
     void create_texture_image();
     void create_texture_image_view();
     void create_texture_sampler();
-    void create_uniform_buffers();
+    void create_camera_ubos();
     void create_descriptor_pool();
     void create_descriptor_sets();
     void create_vertex_buffer();
     void create_index_buffer();
+    void create_scene_objects();
     void create_command_buffers();
     void create_sync_objects();
 
@@ -64,6 +65,16 @@ private:
 private:
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
+    struct CubeObject {
+        glm::vec3 m_pos;
+        glm::vec3 m_rotate_axis;
+
+        std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_ubos;
+        std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_ubo_memory;
+        std::array<void*, MAX_FRAMES_IN_FLIGHT> m_ubo_data;
+        std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;
+    };
+
     SDL_Window* m_window{};
     u32 m_window_width;
     u32 m_window_height;
@@ -72,10 +83,10 @@ private:
     VkSurfaceKHR m_window_surface;
     
     std::unique_ptr<VulkanDevice> m_device;
-
     std::unique_ptr<VulkanSwapchain> m_swapchain;
 
     VkDescriptorSetLayout m_descriptor_set_layout;
+    VkDescriptorSetLayout m_scene_object_descriptor_set_layout;
 
     VkPipelineLayout m_pipeline_layout;
     VkPipeline m_pipeline;
@@ -95,11 +106,13 @@ private:
     VkImageView m_texture_image_view;
     VkSampler m_texture_sampler;
     
-    std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_uniform_buffers;
-    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_uniform_buffer_memory;
+    std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
+    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_camera_ubo_memory;
 
     VkDescriptorPool m_descriptor_pool;
     std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;
+
+    std::vector<CubeObject> m_scene_objects;
 
     VkCommandPool m_command_pool;
     VkCommandPool m_transient_command_pool;
