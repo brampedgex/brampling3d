@@ -8,11 +8,12 @@ A custom, cross-platform, homemade game/graphics engine built on Vulkan and SDL3
 - More soon...
 
 **TODO:**
-- Make `Engine` less monolithic
-- Depth buffer
-- Multiple scene objects
-- Entity component system
-- Shadow mapping, deferred rendering, and other visual effects
+- [ ] Make `Engine` less monolithic
+- [x] Depth buffer
+- [x] Multiple scene objects
+- [ ] Camera controls
+- [ ] Entity component system
+- [ ] Shadow mapping, deferred rendering, and other visual effects
 
 ## Resources
 - [Swim Engine](https://github.com/Swedeachu/Swim-Engine)
