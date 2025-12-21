@@ -60,7 +60,7 @@ function(CompileSlangShaders SRC)
 endfunction()
 
 
-CompileSlangShaders("shaders/color3d.slang")
+CompileSlangShaders("shaders/soggycube.slang")
 EmbedFile("images/soggy.png")
 
 

@@ -15,13 +15,11 @@ ConstantBuffer<CubeUBO> cube;
 
 struct VSInput {
     float3 pos;
-    float3 col;
     float2 tex_coord;
 };
 
 struct VSOutput {
     float4 pos : SV_Position;
-    float3 col;
     float2 tex_coord;
 };
 
@@ -34,7 +32,6 @@ VSOutput vertex_main(VSInput in) {
 
     VSOutput output;
     output.pos = pos;
-    output.col = in.col;
     output.tex_coord = in.tex_coord;
 
     return output;
@@ -46,5 +43,5 @@ Sampler2D tex_sampler;
 [shader("fragment")]
 float3 fragment_main(VSOutput in) : SV_TARGET {
     float2 uv = in.tex_coord;
-    return tex_sampler.Sample(uv).rgb * in.col;
+    return tex_sampler.Sample(uv).rgb;
 }

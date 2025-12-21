@@ -108,6 +108,7 @@ private:
     
     std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
     std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_camera_ubo_memory;
+    std::array<void*, MAX_FRAMES_IN_FLIGHT> m_camera_ubo_data;
 
     VkDescriptorPool m_descriptor_pool;
     std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;

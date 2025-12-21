@@ -10,7 +10,6 @@
 
 struct Vertex {
     glm::vec3 pos;
-    glm::vec3 col;
     glm::vec2 tex_coord;
 
     static VkVertexInputBindingDescription binding_description() {
@@ -21,7 +20,7 @@ struct Vertex {
         };
     }
 
-    static std::array<VkVertexInputAttributeDescription, 3> attribute_descriptions() {
+    static std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions() {
         return std::to_array<VkVertexInputAttributeDescription>({
             {
                 .location = 0,
@@ -31,12 +30,6 @@ struct Vertex {
             },
             {
                 .location = 1,
-                .binding = 0,
-                .format = VK_FORMAT_R32G32B32_SFLOAT,
-                .offset = offsetof(Vertex, col)
-            },
-            {
-                .location = 2,
                 .binding = 0,
                 .format = VK_FORMAT_R32G32_SFLOAT,
                 .offset = offsetof(Vertex, tex_coord)
@@ -48,35 +41,35 @@ struct Vertex {
 // Textured cube vertices
 constexpr auto VERTICES = std::to_array<Vertex>({
     // -x
-    {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 0, 0 }},
-    {{ -0.5,  0.5,  0.5 }, { 0, 1, 1 }, { 1, 0 }},
-    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }, { 0, 1 }},
-    {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 1, 1 }},
+    {{ -0.5,  0.5, -0.5 }, { 0, 0 }},
+    {{ -0.5,  0.5,  0.5 }, { 1, 0 }},
+    {{ -0.5, -0.5, -0.5 }, { 0, 1 }},
+    {{ -0.5, -0.5,  0.5 }, { 1, 1 }},
     // +z
-    {{ -0.5,  0.5,  0.5 }, { 0, 1, 1 }, { 0, 0 }},
-    {{  0.5,  0.5,  0.5 }, { 1, 1, 1 }, { 1, 0 }},
-    {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 0, 1 }},
-    {{  0.5, -0.5,  0.5 }, { 1, 0, 1 }, { 1, 1 }},
+    {{ -0.5,  0.5,  0.5 }, { 0, 0 }},
+    {{  0.5,  0.5,  0.5 }, { 1, 0 }},
+    {{ -0.5, -0.5,  0.5 }, { 0, 1 }},
+    {{  0.5, -0.5,  0.5 }, { 1, 1 }},
     // +x
-    {{  0.5,  0.5,  0.5 }, { 1, 1, 1 }, { 0, 0 }},
-    {{  0.5,  0.5, -0.5 }, { 1, 1, 0 }, { 1, 0 }},
-    {{  0.5, -0.5,  0.5 }, { 1, 0, 1 }, { 0, 1 }},
-    {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 1, 1 }},
+    {{  0.5,  0.5,  0.5 }, { 0, 0 }},
+    {{  0.5,  0.5, -0.5 }, { 1, 0 }},
+    {{  0.5, -0.5,  0.5 }, { 0, 1 }},
+    {{  0.5, -0.5, -0.5 }, { 1, 1 }},
     // -z
-    {{  0.5,  0.5, -0.5 }, { 1, 1, 0 }, { 0, 0 }},
-    {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 1, 0 }},
-    {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 0, 1 }},
-    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }, { 1, 1 }},
+    {{  0.5,  0.5, -0.5 }, { 0, 0 }},
+    {{ -0.5,  0.5, -0.5 }, { 1, 0 }},
+    {{  0.5, -0.5, -0.5 }, { 0, 1 }},
+    {{ -0.5, -0.5, -0.5 }, { 1, 1 }},
     // +y
-    {{  0.5,  0.5, -0.5 }, { 1, 1, 0 }, { 0, 0 }},
-    {{  0.5,  0.5,  0.5 }, { 1, 1, 1 }, { 1, 0 }},
-    {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 0, 1 }},
-    {{ -0.5,  0.5,  0.5 }, { 0, 1, 1 }, { 1, 1 }},
+    {{  0.5,  0.5, -0.5 }, { 0, 0 }},
+    {{  0.5,  0.5,  0.5 }, { 1, 0 }},
+    {{ -0.5,  0.5, -0.5 }, { 0, 1 }},
+    {{ -0.5,  0.5,  0.5 }, { 1, 1 }},
     // -y
-    {{ -0.5, -0.5, -0.5 }, { 0, 0, 0 }, { 0, 0 }},
-    {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 1, 0 }},
-    {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 0, 1 }},
-    {{  0.5, -0.5,  0.5 }, { 1, 0, 1 }, { 1, 1 }}
+    {{ -0.5, -0.5, -0.5 }, { 0, 0 }},
+    {{ -0.5, -0.5,  0.5 }, { 1, 0 }},
+    {{  0.5, -0.5, -0.5 }, { 0, 1 }},
+    {{  0.5, -0.5,  0.5 }, { 1, 1 }}
 });
 
 // Textured cube indices
@@ -220,11 +213,12 @@ void Engine::quit() {
     vkFreeDescriptorSets(device(), m_descriptor_pool, m_descriptor_sets.size(), m_descriptor_sets.data());
     vkDestroyDescriptorPool(device(), m_descriptor_pool, nullptr);
 
-    for (const auto uniform_buffer_memory : m_camera_ubo_memory) {
-        vkFreeMemory(device(), uniform_buffer_memory, nullptr);
+    for (const auto mem : m_camera_ubo_memory) {
+        vkUnmapMemory(device(), mem);
+        vkFreeMemory(device(), mem, nullptr);
     }
-    for (const auto uniform_buffer : m_camera_ubos) {
-        vkDestroyBuffer(device(), uniform_buffer, nullptr);
+    for (const auto ubo : m_camera_ubos) {
+        vkDestroyBuffer(device(), ubo, nullptr);
     }
 
     vkDestroySampler(device(), m_texture_sampler, nullptr);
@@ -526,8 +520,8 @@ void Engine::create_descriptor_set_layouts() {
 }
 
 void Engine::create_graphics_pipeline() {
-    std::vector<u8> vert_shader(std::from_range, get_asset<"shaders/color3d.vertex.spv">());
-    std::vector<u8> frag_shader(std::from_range, get_asset<"shaders/color3d.fragment.spv">());
+    std::vector<u8> vert_shader(std::from_range, get_asset<"shaders/soggycube.vertex.spv">());
+    std::vector<u8> frag_shader(std::from_range, get_asset<"shaders/soggycube.fragment.spv">());
 
     VkShaderModuleCreateInfo vert_module_info{
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -964,18 +958,22 @@ void Engine::create_camera_ubos() {
             m_camera_ubos[i],
             m_camera_ubo_memory[i]
         );
+
+        vkMapMemory(device(), m_camera_ubo_memory[i], 0, sizeof(CameraUBO), 0, &m_camera_ubo_data[i]);
     }
 }
 
 void Engine::create_descriptor_pool() {
+    constexpr u32 MAX_SETS = 1024;
+    
     VkDescriptorPoolSize ubo_pool_size{
         .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        .descriptorCount = MAX_FRAMES_IN_FLIGHT + MAX_FRAMES_IN_FLIGHT * 2
+        .descriptorCount = MAX_SETS,
     };
 
     VkDescriptorPoolSize sampler_pool_size{
         .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        .descriptorCount = MAX_FRAMES_IN_FLIGHT
+        .descriptorCount = MAX_SETS,
     };
 
     const auto pool_sizes = std::to_array({ ubo_pool_size, sampler_pool_size });
@@ -983,7 +981,7 @@ void Engine::create_descriptor_pool() {
     VkDescriptorPoolCreateInfo pool_info{
         .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
         .flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
-        .maxSets = MAX_FRAMES_IN_FLIGHT + MAX_FRAMES_IN_FLIGHT * 2,
+        .maxSets = MAX_SETS,
         .poolSizeCount = pool_sizes.size(),
         .pPoolSizes = pool_sizes.data()
     };
@@ -1083,11 +1081,13 @@ void Engine::create_scene_objects() {
     const auto poses = std::to_array<glm::vec3>({
         { 0, 0, 0 },
         { 1.5, 0, 1.5 },
+        { 2.0, -1.0, 0.0 }
     });
 
     const auto rotate_axes = std::to_array<glm::vec3>({
         { 0, 1, 0 },
         { 0, 0, 1 },
+        { 1, 0, 0 }
     });
 
     for (usize i = 0; i < poses.size(); i++) {
@@ -1377,11 +1377,7 @@ void Engine::render_frame() {
         camera_ubo.proj[1][1] *= -1; // Flip vertically to correct the screen space coordinates
 
         // Write Camera UBO.
-        auto mem = m_camera_ubo_memory[m_current_frame];
-        void* data;
-        vkMapMemory(device(), mem, 0, sizeof(CameraUBO), 0, &data);
-        memcpy(data, &camera_ubo, sizeof(CameraUBO));
-        vkUnmapMemory(device(), mem);
+        memcpy(m_camera_ubo_data[m_current_frame], &camera_ubo, sizeof(CameraUBO));
 
         for (const auto& object : m_scene_objects) {
             auto id = glm::identity<glm::mat4x4>();
