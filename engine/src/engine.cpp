@@ -809,38 +809,18 @@ void Engine::create_texture_image() {
 
     VkCommandBuffer command_buffer = begin_single_time_commands();
 
-    VkImageMemoryBarrier barrier{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = 0,
-        .dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        // We can transfer an image between queues this way. We could hypothetically use a separate queue to upload images, allowing async texture uploads.
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = m_texture_image,
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        },
-    };
-
-    // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
-    vkCmdPipelineBarrier(
-        command_buffer,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier
+    transition_image_layout(
+        command_buffer, 
+        m_texture_image, 
+        0, 
+        VK_ACCESS_TRANSFER_WRITE_BIT, 
+        VK_IMAGE_LAYOUT_UNDEFINED, 
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
+        VK_PIPELINE_STAGE_TRANSFER_BIT
     );
 
     // Copy the staging buffer.
-
     VkBufferImageCopy region{
         .bufferOffset = 0,
         .bufferRowLength = 0,
@@ -854,7 +834,6 @@ void Engine::create_texture_image() {
         .imageOffset = { .x = 0, .y = 0, .z = 0 },
         .imageExtent = { .width = image->width(), .height = image->height(), .depth =  1 }
     };
-
     vkCmdCopyBufferToImage(
         command_buffer,
         staging_buffer,
@@ -865,35 +844,15 @@ void Engine::create_texture_image() {
     );
 
     // Prepare the texture for shader use.
-
-    VkImageMemoryBarrier barrier2{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_SHADER_READ_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-        // We can transfer an image between queues this way. We could hypothetically use a separate queue to upload images, allowing async texture uploads.
-        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-        .image = m_texture_image,
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        },
-    };
-
-    // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
-    vkCmdPipelineBarrier(
-        command_buffer,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &barrier2
+    transition_image_layout(
+        command_buffer, 
+        m_texture_image, 
+        VK_ACCESS_TRANSFER_WRITE_BIT, 
+        VK_ACCESS_SHADER_READ_BIT, 
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
 
     end_single_time_commands(command_buffer);
@@ -1282,6 +1241,37 @@ void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
     vkFreeCommandBuffers(device(), m_transient_command_pool, 1, &command_buffer);
 }
 
+void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask) {
+    VkImageMemoryBarrier memory_barrier_1{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .srcAccessMask = src_access_mask,
+        .dstAccessMask = dst_access_mask,
+        .oldLayout = src_layout,
+        .newLayout = dst_layout,
+        .image = image,
+        .subresourceRange = {
+            .aspectMask = aspect_mask,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+    // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
+    vkCmdPipelineBarrier(
+        command_buffer,
+        src_stage_mask,
+        dst_stage_mask,
+        0,
+        0,
+        nullptr,
+        0,
+        nullptr,
+        1,
+        &memory_barrier_1
+    );
+}
+
 void Engine::recreate_swapchain() {
     // Wait for the device to be idle before recreating the swapchain
     vkDeviceWaitIdle(device());
@@ -1394,56 +1384,27 @@ void Engine::render_frame() {
     }
 
     // Transition the swapchain image to be suitable for rendering.
-    VkImageMemoryBarrier memory_barrier_1{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .image = m_swapchain->image(m_image_index),
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        }
-    };
-    vkCmdPipelineBarrier(
+    transition_image_layout(
         command_buffer,
+        m_swapchain->image(m_image_index),
+        0,
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        0,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &memory_barrier_1
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
     );
 
-    VkImageMemoryBarrier depth_memory_barrier{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-        .newLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-        .image = m_depth_image,
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-    vkCmdPipelineBarrier(
+    transition_image_layout(
         command_buffer,
+        m_depth_image,
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &depth_memory_barrier
+        VK_IMAGE_ASPECT_DEPTH_BIT
     );
     
     VkClearValue clear_col = { .color = { .float32 = {0.2, 0.2, 0.2, 1 } } };
@@ -1520,33 +1481,17 @@ void Engine::render_frame() {
     render_imgui(command_buffer);
 
     // Transition the image back to be suitable for presenting.
-    VkImageMemoryBarrier memory_barrier_2{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-        .oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-        .newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        .image = m_swapchain->image(m_image_index),
-        .subresourceRange = {
-            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1,
-        }
-    };
-    vkCmdPipelineBarrier(
+    transition_image_layout(
         command_buffer,
+        m_swapchain->image(m_image_index),
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        0,
+        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-        0,
-        0,
-        nullptr,
-        0,
-        nullptr,
-        1,
-        &memory_barrier_2
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
     );
-
+        
     vulkan_check_res(
         vkEndCommandBuffer(command_buffer),
         "failed to end command buffer"
@@ -1605,14 +1550,13 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
 
     vkCmdBeginRendering(command_buffer, &rendering_info);
 
-    // TODO: A dedicated render pass for imgui.
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
     ImGui::Begin("Debug");
 
-    imgui_text("brampling3D ({} {})", SDL_GetPlatform(), ENGINE_SYSTEM_PROCESSOR);
+    imgui_text("brampling3D ({} {}, {})", SDL_GetPlatform(), ENGINE_SYSTEM_PROCESSOR, SDL_GetCurrentVideoDriver());
     imgui_text("Device: {}", m_device->device_name());
     auto& io = ImGui::GetIO();
     imgui_text("Frame time: {:.3f} ms ({:.1f} FPS)", 1000.0 / io.Framerate, io.Framerate);

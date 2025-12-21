@@ -29,7 +29,7 @@ void VulkanSwapchain::choose_surface_format() {
 }
 
 VkPresentModeKHR VulkanSwapchain::choose_present_mode() {
-    // VK_PRESENT_MODE_FIFO_KHR limits frame throughput to refresh rate which reduces power consumption.
+    // VK_PRESENT_MODE_FIFO_KHR limits frame throughput to refresh rate (ie. vsync), which reduces power consumption.
     if (m_vsync) {
         return VK_PRESENT_MODE_FIFO_KHR;
     }
@@ -39,8 +39,10 @@ VkPresentModeKHR VulkanSwapchain::choose_present_mode() {
     std::vector<VkPresentModeKHR> present_modes(present_mode_count);
     vkGetPhysicalDeviceSurfacePresentModesKHR(m_physical_device, m_surface, &present_mode_count, present_modes.data());
 
-    // TODO: tearing setting that uses VK_PRESENT_MODE_IMMEDIATE_KHR
-    const auto preferred_present_mode = VK_PRESENT_MODE_MAILBOX_KHR;
+    // VK_PRESENT_MODE_IMMEDIATE_KHR allows tearing.
+    // There's also VK_PRESENT_MODE_MAILBOX_KHR which can do triple buffering with dropped frames,
+    // but it seems to not have any effect on Windows :(
+    const auto preferred_present_mode = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
     for (const auto present_mode : present_modes) {
         if (present_mode == preferred_present_mode) {
@@ -139,8 +141,7 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height) {
 void VulkanSwapchain::reset() {
     cleanup();
 
-    // Swapchain recreation could've happened because of a surface format change, so we'll re-query the surface format
-    // and let the engine recreate the render_pass before calling create() again
+    // Swapchain recreation could've happened because of a surface format change (eg. toggling monitor HDR), so we'll re-query the surface format
     choose_surface_format();
 }
 
