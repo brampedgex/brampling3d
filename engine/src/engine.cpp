@@ -1068,22 +1068,36 @@ void Engine::create_index_buffer() {
 }
 
 void Engine::create_scene_objects() {
-    const auto poses = std::to_array<glm::vec3>({
-        { 0, 0, 0 },
-        { 1.5, 0, 1.5 },
-        { 2.0, -1.0, 0.0 }
-    });
+    std::random_device rd;
+    std::mt19937 mt{ rd() };
+    std::uniform_real_distribution<f32> pos_dist(-5, 5);
+    std::uniform_real_distribution<f32> rot_dist(0, 1);
 
-    const auto rotate_axes = std::to_array<glm::vec3>({
-        { 0, 1, 0 },
-        { 0, 0, 1 },
-        { 1, 0, 0 }
-    });
+    constexpr size_t NUM_CUBES = 60;
 
-    for (usize i = 0; i < poses.size(); i++) {
+    for (usize i = 0; i < NUM_CUBES; i++) {
+        glm::vec3 pos{
+            pos_dist(mt),
+            pos_dist(mt),
+            pos_dist(mt),
+        };
+
+        // Generates a uniformly distributed quaternion. Not gonna pretend like I have the slightest idea as to how the hell this works
+        // https://stackoverflow.com/a/44031492
+        constexpr auto PI = std::numbers::pi_v<f32>;
+        f32 u = rot_dist(mt);
+        f32 v = rot_dist(mt);
+        f32 w = rot_dist(mt);
+        glm::quat rot{
+            std::sqrtf(1 - u) * sinf(2 * PI * v),
+            std::sqrtf(1 - u) * cosf(2 * PI * v),
+            std::sqrtf(u) * sinf(2 * PI * w),
+            std::sqrtf(u) * cosf(2 * PI * w)
+        };
+
         CubeObject cube{
-            .m_pos = poses[i],
-            .m_rotate_axis = rotate_axes[i],
+            .m_pos = pos,
+            .m_rot = rot
         };
 
         for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -1442,11 +1456,11 @@ void Engine::render_frame() {
 
         for (const auto& object : m_scene_objects) {
             auto id = glm::identity<glm::mat4x4>();
-            auto rotate = glm::rotate(id, glm::radians(seconds * 180), object.m_rotate_axis);
+            auto rotate = glm::mat4_cast(object.m_rot); // They could not have made this function any less obscure
             auto translate = glm::translate(id, object.m_pos);
 
             CubeUBO cube_ubo{
-                .model = rotate * translate
+                .model = translate * rotate
             };
 
             // Write Cube UBO.
@@ -1478,7 +1492,7 @@ void Engine::render_frame() {
         VK_IMAGE_ASPECT_DEPTH_BIT
     );
     
-    VkClearValue clear_col = { .color = { .float32 = {0.2, 0.2, 0.2, 1 } } };
+    VkClearValue clear_col = { .color = { .float32 = { 0.15, 0.15, 0.15, 1 } } };
     VkClearValue clear_depth = { .depthStencil = { .depth = 1.0, .stencil = 0 } };
 
     VkRenderingAttachmentInfo color_attachment{

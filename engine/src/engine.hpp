@@ -74,7 +74,7 @@ private:
 
     struct CubeObject {
         glm::vec3 m_pos;
-        glm::vec3 m_rotate_axis;
+        glm::quat m_rot;
 
         std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_ubos;
         std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_ubo_memory;
@@ -133,6 +133,7 @@ private:
     u32 m_image_index;
     bool m_window_resized = false;
     bool m_need_swapchain_recreate = false;
+    bool m_grab_mouse = false;
 
     Camera m_camera;
 
