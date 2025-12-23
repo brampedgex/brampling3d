@@ -134,28 +134,39 @@ void Engine::run() {
             case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
                 should_quit = true;
                 break;
-            case SDL_EVENT_KEY_DOWN:
-                if (event.key.key == SDLK_Q) {
+            case SDL_EVENT_KEY_DOWN: {
+                auto& key_event = event.key;
+
+                switch (key_event.key) {
+                case SDLK_Q:
                     should_quit = true;
+                    break;
+                case SDLK_ESCAPE:
+                    m_grab_mouse = !m_grab_mouse;
+                    SDL_SetWindowRelativeMouseMode(m_window, m_grab_mouse);
+                    break;
                 }
-                break;
+            } break;
             case SDL_EVENT_MOUSE_MOTION: {
                 auto& motion_event = event.motion;
 
-                f32 x_rel = motion_event.xrel;
-                f32 y_rel = motion_event.yrel;
+                // If mouse is grabbed, do camera look
+                if (m_grab_mouse) {
+                    f32 x_rel = motion_event.xrel;
+                    f32 y_rel = motion_event.yrel;
 
-                f32 x_degrees = x_rel * 0.1;
-                f32 y_degrees = y_rel * -0.1; // y_rel goes downwards in window space
+                    f32 x_degrees = x_rel * 0.1;
+                    f32 y_degrees = y_rel * -0.1; // y_rel goes downwards in window space
 
-                m_camera.set_yaw(m_camera.yaw() + x_degrees);
+                    m_camera.set_yaw(m_camera.yaw() + x_degrees);
 
-                // Clamp the pitch so the camera doesn't go upside down.
-                f32 new_pitch = m_camera.pitch() + y_degrees;
-                new_pitch = std::clamp(new_pitch, -90.f, 90.f);
-                m_camera.set_pitch(new_pitch);
+                    // Clamp the pitch so the camera doesn't go upside down.
+                    f32 new_pitch = m_camera.pitch() + y_degrees;
+                    new_pitch = std::clamp(new_pitch, -90.f, 90.f);
+                    m_camera.set_pitch(new_pitch);
 
-                m_camera.update_rot();
+                    m_camera.update_rot();
+                }
             } break;
             case SDL_EVENT_WINDOW_RESIZED: {
                 auto& window_event = event.window;
@@ -1114,7 +1125,6 @@ void Engine::create_scene_objects() {
 
         std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT> layouts;
         std::ranges::fill(layouts, m_scene_object_descriptor_set_layout);
-
         VkDescriptorSetAllocateInfo alloc_info{
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
             .descriptorPool = m_descriptor_pool,

@@ -133,7 +133,7 @@ private:
     u32 m_image_index;
     bool m_window_resized = false;
     bool m_need_swapchain_recreate = false;
-    bool m_grab_mouse = false;
+    bool m_grab_mouse = true;
 
     Camera m_camera;
 
