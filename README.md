@@ -11,7 +11,7 @@ A custom, cross-platform, homemade game/graphics engine built on Vulkan and SDL3
 - [ ] Make `Engine` less monolithic
 - [x] Depth buffer
 - [x] Multiple scene objects
-- [ ] Camera controls
+- [x] Camera controls
 - [ ] Entity component system
 - [ ] Shadow mapping, deferred rendering, and other visual effects
 
