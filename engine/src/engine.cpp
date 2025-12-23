@@ -1205,7 +1205,7 @@ u32 Engine::choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_f
 
     u32 memory_type_index = UINT32_MAX;
     for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
-        if ((memory_type_bits & (i << i)) &&
+        if ((memory_type_bits & (1 << i)) &&
             (mem_properties.memoryTypes[i].propertyFlags & mem_flags)) {
             memory_type_index = i;
             break;

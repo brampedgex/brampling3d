@@ -1,10 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <numbers>
 #include <random>
 #include <ranges>
-#include <string>
 #include <string_view>
+#include <string>
 
 #include <fmt/base.h>
 
