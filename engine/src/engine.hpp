@@ -1,5 +1,7 @@
 #pragma once
 
+#include "camera.hpp"
+
 #include "util/vulkan.hpp"
 #include "util/sdl3.hpp"
 
@@ -24,6 +26,8 @@ private:
     void init_graphics();
 
     void init_imgui();
+
+    void init_scene();
 
     void create_instance();
     void create_window_surface();
@@ -53,6 +57,7 @@ private:
 
     void recreate_swapchain();   
 
+    void update();
     void update_graphics();
 
     void render_frame();
@@ -129,6 +134,9 @@ private:
     bool m_window_resized = false;
     bool m_need_swapchain_recreate = false;
 
+    Camera m_camera;
 
     bool m_vsync = true;
+
+    std::chrono::steady_clock::time_point m_last_update;
 };

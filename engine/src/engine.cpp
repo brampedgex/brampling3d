@@ -108,8 +108,10 @@ void Engine::start() {
     init_window();
     init_graphics();
     init_imgui();
+    init_scene();
 
     SDL_ShowWindow(m_window);
+    SDL_SetWindowRelativeMouseMode(m_window, true);
 
     // Calculate initialization time.
     const auto end = std::chrono::steady_clock::now();
@@ -137,13 +139,29 @@ void Engine::run() {
                     should_quit = true;
                 }
                 break;
+            case SDL_EVENT_MOUSE_MOTION: {
+                auto& motion_event = event.motion;
+
+                f32 x_rel = motion_event.xrel;
+                f32 y_rel = motion_event.yrel;
+
+                f32 x_degrees = x_rel * 0.1;
+                f32 y_degrees = y_rel * -0.1; // y_rel goes downwards in window space
+
+                m_camera.set_yaw(m_camera.yaw() + x_degrees);
+
+                // Clamp the pitch so the camera doesn't go upside down.
+                f32 new_pitch = m_camera.pitch() + y_degrees;
+                new_pitch = std::clamp(new_pitch, -90.f, 90.f);
+                m_camera.set_pitch(new_pitch);
+
+                m_camera.update_rot();
+            } break;
             case SDL_EVENT_WINDOW_RESIZED: {
                 auto& window_event = event.window;
 
                 m_window_width = (u32) window_event.data1;
                 m_window_height = (u32) window_event.data2;
-                spdlog::info("window resized: {} {}", m_window_width, m_window_height);
-
                 m_window_resized = true;
             } break;
             default:
@@ -151,6 +169,7 @@ void Engine::run() {
             }
         }
 
+        update();
         update_graphics();
     }
 
@@ -341,6 +360,16 @@ void Engine::init_imgui() {
     ImGui_ImplVulkan_Init(&init_info);
 
     spdlog::info("ImGui initialized");
+}
+
+void Engine::init_scene() {
+    // Setup camera.
+    m_camera.set_pos({ -10, 0, 0 });
+    m_camera.set_pitch(0);
+    m_camera.set_yaw(0);
+    m_camera.set_fov(45);
+
+    m_camera.update_rot();
 }
 
 void Engine::create_instance() {
@@ -959,8 +988,10 @@ void Engine::create_descriptor_sets() {
         .pSetLayouts = layouts.data()
     };
 
-    VkResult res = vkAllocateDescriptorSets(device(), &alloc_info, m_descriptor_sets.data());
-    vulkan_check_res(res, "failed to allocate descriptor sets");
+    vulkan_check_res(
+        vkAllocateDescriptorSets(device(), &alloc_info, m_descriptor_sets.data()), 
+        "failed to allocate descriptor sets"
+    );
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo buffer_info{
@@ -1234,7 +1265,7 @@ void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
     };
 
     // TODO: Return a fence for the caller to wait on to allow less stalling 
-    // (let's us start single time tasks while others are already in flight and wait on all of them in one go... or just one since queues execute command buffers sequentially)
+    // (lets us start single time tasks while others are already in flight and wait on all of them in one go... or just one since queues execute command buffers sequentially)
     vkQueueSubmit(graphics_queue(), 1, &submit_info, VK_NULL_HANDLE);
     vkQueueWaitIdle(graphics_queue());
 
@@ -1242,6 +1273,7 @@ void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
 }
 
 void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask) {
+    // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
     VkImageMemoryBarrier memory_barrier_1{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .srcAccessMask = src_access_mask,
@@ -1257,7 +1289,6 @@ void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage ima
             .layerCount = 1,
         }
     };
-    // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
     vkCmdPipelineBarrier(
         command_buffer,
         src_stage_mask,
@@ -1301,6 +1332,47 @@ void Engine::recreate_swapchain() {
     ImGui_ImplVulkan_SetMinImageCount(m_swapchain->min_image_count());
 
     spdlog::info("finished swapchain recreate");
+}
+
+void Engine::update() {
+    const auto now = std::chrono::steady_clock::now();
+    const auto diff = now - m_last_update;
+    m_last_update = now;
+
+    const auto time_delta = std::chrono::duration_cast<std::chrono::duration<f32>>(diff).count();
+
+    
+    // Update camera position.
+    f32 forward = 0;
+    f32 right = 0;
+    f32 up = 0;
+
+    const auto keyboard_state = SDL_GetKeyboardState(nullptr);
+    
+    if (keyboard_state[SDL_GetScancodeFromKey(SDLK_W, nullptr)])
+        forward += 1;
+    if (keyboard_state[SDL_GetScancodeFromKey(SDLK_S, nullptr)])
+        forward -= 1;
+    if (keyboard_state[SDL_GetScancodeFromKey(SDLK_A, nullptr)])
+        right -= 1;
+    if (keyboard_state[SDL_GetScancodeFromKey(SDLK_D, nullptr)])
+        right += 1;
+    if (keyboard_state[SDL_GetScancodeFromKey(SDLK_SPACE, nullptr)])
+        up += 1;
+    if (keyboard_state[SDL_GetScancodeFromKey(SDLK_LCTRL, nullptr)])
+        up -= 1;
+
+    glm::vec3 dir_xz = m_camera.dir_xz();
+
+    glm::vec3 move_dir = {
+        dir_xz.x * forward - dir_xz.z * right,
+        up,
+        dir_xz.z * forward + dir_xz.x * right
+    };
+    move_dir *= time_delta * 5;
+
+    m_camera.set_pos(m_camera.pos() + move_dir);
+    m_camera.update_rot();
 }
 
 void Engine::update_graphics() {
@@ -1362,9 +1434,8 @@ void Engine::render_frame() {
         auto aspect = (f32) extent.width / extent.height;
 
         CameraUBO camera_ubo;
-        camera_ubo.view = glm::lookAt(glm::vec3(6, 5, 6), glm::vec3(0, 0, 0), glm::vec3(0, 1, 0));
-        camera_ubo.proj = glm::perspective(glm::radians(45.f), aspect, 0.1f, 100.f);
-        camera_ubo.proj[1][1] *= -1; // Flip vertically to correct the screen space coordinates
+        camera_ubo.view = m_camera.calc_view_mtx();
+        camera_ubo.proj = m_camera.calc_proj_mtx(aspect);
 
         // Write Camera UBO.
         memcpy(m_camera_ubo_data[m_current_frame], &camera_ubo, sizeof(CameraUBO));

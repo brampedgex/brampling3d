@@ -7,11 +7,10 @@ struct CubeUBO {
     float4x4 model;
 };
 
-[vk::binding(0, 0)]
-ConstantBuffer<CameraUBO> camera;
+[vk::binding(0, 0)] ConstantBuffer<CameraUBO> camera;
+[vk::binding(1, 0)] Sampler2D tex_sampler;
 
-[vk::binding(0, 1)]
-ConstantBuffer<CubeUBO> cube;
+[vk::binding(0, 1)] ConstantBuffer<CubeUBO> cube;
 
 struct VSInput {
     float3 pos;
@@ -37,8 +36,6 @@ VSOutput vertex_main(VSInput in) {
     return output;
 }
 
-[vk::binding(1, 0)]
-Sampler2D tex_sampler;
 
 [shader("fragment")]
 float3 fragment_main(VSOutput in) : SV_TARGET {
