@@ -737,41 +737,15 @@ void Engine::create_depth_image() {
     u32 width = m_swapchain->extent().width;
     u32 height = m_swapchain->extent().height;
 
-    // Create the texture image.
-    VkImageCreateInfo image_info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .flags = 0,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = depth_format,
-        .extent = { .width = width, .height = height, .depth = 1 },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
-    };
-    vulkan_check_res(
-        vkCreateImage(device(), &image_info, nullptr, &m_depth_image),
-        "failed to create depth image"
+    create_image(
+        width,
+        height,
+        depth_format,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        m_depth_image,
+        m_depth_image_memory
     );
-
-    // Allocate memory for the image.
-    VkMemoryRequirements mem_requirements;
-    vkGetImageMemoryRequirements(device(), m_depth_image, &mem_requirements);
-
-    VkMemoryAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-    };
-    vulkan_check_res(
-        vkAllocateMemory(device(), &alloc_info, nullptr, &m_depth_image_memory),
-        "failed to allocate depth image memory"
-    );
-
-    vkBindImageMemory(device(), m_depth_image, m_depth_image_memory, 0);
 
     VkImageViewCreateInfo view_info{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
@@ -812,40 +786,15 @@ void Engine::create_texture_image() {
     vkUnmapMemory(device(), staging_buffer_memory);
 
     // Create the texture image.
-    VkImageCreateInfo image_info{
-        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
-        .flags = 0,
-        .imageType = VK_IMAGE_TYPE_2D,
-        .format = VK_FORMAT_R8G8B8A8_SRGB,
-        .extent = { .width = image->width(), .height = image->height(), .depth = 1 },
-        .mipLevels = 1,
-        .arrayLayers = 1,
-        .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_OPTIMAL,
-        .usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,
-    };
-    vulkan_check_res(
-        vkCreateImage(device(), &image_info, nullptr, &m_texture_image),
-        "failed to create texture image"
+    create_image(
+        image->width(), 
+        image->height(), 
+        VK_FORMAT_R8G8B8A8_SRGB, 
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+        m_texture_image, 
+        m_texture_image_memory
     );
-
-    // Allocate memory for the image.
-    VkMemoryRequirements mem_requirements;
-    vkGetImageMemoryRequirements(device(), m_texture_image, &mem_requirements);
-
-    VkMemoryAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT),
-    };
-    vulkan_check_res(
-        vkAllocateMemory(device(), &alloc_info, nullptr, &m_texture_image_memory),
-        "failed to allocate texture image memory"
-    );
-
-    vkBindImageMemory(device(), m_texture_image, m_texture_image_memory, 0);
 
     VkCommandBuffer command_buffer = begin_single_time_commands();
 
@@ -1249,6 +1198,43 @@ void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropert
     );
 
     vkBindBufferMemory(device(), buf, mem, 0);
+}
+
+void Engine::create_image(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem) {
+    VkImageCreateInfo image_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = 0,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = { .width = width, .height = height, .depth = 1 },
+        .mipLevels = 1,
+        .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    vulkan_check_res(
+        vkCreateImage(device(), &image_info, nullptr, &image),
+        "failed to create image"
+    );
+
+    // Allocate memory for the image.
+    VkMemoryRequirements mem_requirements;
+    vkGetImageMemoryRequirements(device(), image, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_requirements.size,
+        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, mem_flags),
+    };
+    vulkan_check_res(
+        vkAllocateMemory(device(), &alloc_info, nullptr, &mem),
+        "failed to allocate image memory"
+    );
+
+    vkBindImageMemory(device(), image, mem, 0);
 }
 
 VkCommandBuffer Engine::begin_single_time_commands() {

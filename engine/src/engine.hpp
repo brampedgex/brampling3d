@@ -49,6 +49,7 @@ private:
 
     u32 choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_flags);
     void create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& mem);
+    void create_image(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
 
     VkCommandBuffer begin_single_time_commands();
     void end_single_time_commands(VkCommandBuffer command_buffer);
