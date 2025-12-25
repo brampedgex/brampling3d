@@ -375,7 +375,7 @@ void Engine::init_imgui() {
 
 void Engine::init_scene() {
     // Setup camera.
-    m_camera.set_pos({ -10, 0, 0 });
+    m_camera.set_pos({ 0, 0, 10 });
     m_camera.set_pitch(0);
     m_camera.set_yaw(0);
     m_camera.set_fov(45);
@@ -777,7 +777,13 @@ void Engine::create_texture_image() {
     // Create a staging buffer to upload our texture to.
     VkBuffer staging_buffer;
     VkDeviceMemory staging_buffer_memory;
-    create_buffer(image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+    create_buffer(
+        image_size, 
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+        staging_buffer, 
+        staging_buffer_memory
+    );
 
     // Upload the texture.
     void* data;
@@ -1638,7 +1644,7 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
     ImGui::Begin("Debug");
 
     imgui_text("brampling3D ({} {}, {})", SDL_GetPlatform(), ENGINE_SYSTEM_PROCESSOR, SDL_GetCurrentVideoDriver());
-    imgui_text("Device: {}", m_device->device_name());
+    imgui_text("GPU: {}", m_device->device_name());
     auto& io = ImGui::GetIO();
     imgui_text("Frame time: {:.3f} ms ({:.1f} FPS)", 1000.0 / io.Framerate, io.Framerate);
 

@@ -1,39 +1,28 @@
 #include "camera.hpp"
 
-static constexpr f32 DEGREES_TO_RADIANS = std::numbers::pi_v<f32> / 180.f;
-
 void Camera::update_rot() {
-    m_pitch_radians = m_pitch * DEGREES_TO_RADIANS;
-    m_yaw_radians = m_yaw * DEGREES_TO_RADIANS;
+    // Default rotation (0 yaw or pitch) is -Z, this way +X is right and +Y is up.
+    // To rotate, we first do yaw by rotating around the global Y axis.
+    // Then we do pitch by rotating around the local X axis (which is to the right)
+    // This gives us a quaternion we can use to rotate a forward and up vector to create our view matrix.
+    // We can also do fun stuff like tilting the camera.
 
-    m_dir_xz = {
-        cos(m_yaw_radians),
-        0,
-        sin(m_yaw_radians)
-    };
+    // TODO: This should probably be done outside of Camera, in some CameraControl struct, with Camera just having the rot quaternion
+    glm::quat q_yaw = glm::angleAxis(glm::radians(m_yaw), glm::vec3{ 0, -1, 0 });
+    glm::quat q_pitch = glm::angleAxis(glm::radians(m_pitch), glm::vec3{ 1, 0, 0 });
+    m_rotation = q_yaw * q_pitch;
 
-    f32 v_mul = sin(m_pitch_radians);
-    f32 h_mul = cos(m_pitch_radians);
+    glm::vec3 dir = m_rotation * glm::vec3(0, 0, -1);
+    m_dir = dir;
 
-    m_dir = {
-        m_dir_xz.x * h_mul,
-        v_mul,
-        m_dir_xz.z * h_mul,
-    };
+    // For horizontal direction we can multiply by just the yaw quat
+    glm::vec3 dir_xz = q_yaw * glm::vec3(0, 0, -1);
+    m_dir_xz = dir_xz;
 }
 
 glm::mat4x4 Camera::calc_view_mtx() const {
-    f32 xz_mag = m_dir_xz.length();
-
-    f32 v_amount = sin(m_pitch_radians);
-    f32 h_amount = cos(m_pitch_radians);
-    
-    // Calculate a direction that should be 90 degrees up from the viewing direction.
-    glm::vec3 up{
-        m_dir_xz.x * -v_amount,
-        xz_mag * h_amount,
-        m_dir_xz.z * -v_amount,
-    };
+    // Calculate an up direction from our rotation, this way it works looking 90 degrees up/down or with tilting.
+    glm::vec3 up = m_rotation * glm::vec3(0.f, 1.f, 0.f);
 
     return glm::lookAt(m_pos, m_pos + m_dir, up);
 }

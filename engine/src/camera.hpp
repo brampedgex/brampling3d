@@ -20,8 +20,7 @@ public: // Getters/setters
     [[nodiscard]] auto yaw() const { return m_yaw; }
     [[nodiscard]] auto fov() const { return m_fov; }
 
-    [[nodiscard]] auto pitch_radians() const { return m_pitch_radians; }
-    [[nodiscard]] auto yaw_radians() const { return m_yaw_radians; }
+    [[nodiscard]] const auto& rotation() const { return m_rotation; }
     [[nodiscard]] const auto& dir() const { return m_dir; }
     [[nodiscard]] const auto& dir_xz() const { return m_dir_xz; }
 
@@ -37,8 +36,7 @@ private:
     f32 m_fov = 0;
 
     // Calculated from above members:
-    f32 m_pitch_radians = 0;
-    f32 m_yaw_radians = 0;
+    glm::quat m_rotation{};
     glm::vec3 m_dir{};
     glm::vec3 m_dir_xz{};
 };
