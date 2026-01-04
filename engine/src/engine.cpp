@@ -10,6 +10,7 @@
 
 struct Vertex {
     glm::vec3 pos;
+    glm::vec3 normal;
     glm::vec2 tex_coord;
 
     static VkVertexInputBindingDescription binding_description() {
@@ -20,7 +21,7 @@ struct Vertex {
         };
     }
 
-    static std::array<VkVertexInputAttributeDescription, 2> attribute_descriptions() {
+    static auto attribute_descriptions() {
         return std::to_array<VkVertexInputAttributeDescription>({
             {
                 .location = 0,
@@ -30,6 +31,12 @@ struct Vertex {
             },
             {
                 .location = 1,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
+                .offset = offsetof(Vertex, normal),
+            },
+            {
+                .location = 2,
                 .binding = 0,
                 .format = VK_FORMAT_R32G32_SFLOAT,
                 .offset = offsetof(Vertex, tex_coord)
@@ -42,35 +49,35 @@ struct Vertex {
 // Textured cube vertices
 constexpr auto VERTICES = std::to_array<Vertex>({
     // -x
-    {{ -0.5,  0.5, -0.5 }, { 0, 0 }},
-    {{ -0.5,  0.5,  0.5 }, { 1, 0 }},
-    {{ -0.5, -0.5, -0.5 }, { 0, 1 }},
-    {{ -0.5, -0.5,  0.5 }, { 1, 1 }},
+    {{ -0.5,  0.5, -0.5 }, { -1, 0, 0 }, { 0, 0 }},
+    {{ -0.5,  0.5,  0.5 }, { -1, 0, 0 }, { 1, 0 }},
+    {{ -0.5, -0.5, -0.5 }, { -1, 0, 0 }, { 0, 1 }},
+    {{ -0.5, -0.5,  0.5 }, { -1, 0, 0 }, { 1, 1 }},
     // +z
-    {{ -0.5,  0.5,  0.5 }, { 0, 0 }},
-    {{  0.5,  0.5,  0.5 }, { 1, 0 }},
-    {{ -0.5, -0.5,  0.5 }, { 0, 1 }},
-    {{  0.5, -0.5,  0.5 }, { 1, 1 }},
+    {{ -0.5,  0.5,  0.5 }, { 0, 0, 1 }, { 0, 0 }},
+    {{  0.5,  0.5,  0.5 }, { 0, 0, 1 }, { 1, 0 }},
+    {{ -0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 0, 1 }},
+    {{  0.5, -0.5,  0.5 }, { 0, 0, 1 }, { 1, 1 }},
     // +x
-    {{  0.5,  0.5,  0.5 }, { 0, 0 }},
-    {{  0.5,  0.5, -0.5 }, { 1, 0 }},
-    {{  0.5, -0.5,  0.5 }, { 0, 1 }},
-    {{  0.5, -0.5, -0.5 }, { 1, 1 }},
+    {{  0.5,  0.5,  0.5 }, { 1, 0, 0 }, { 0, 0 }},
+    {{  0.5,  0.5, -0.5 }, { 1, 0, 0 }, { 1, 0 }},
+    {{  0.5, -0.5,  0.5 }, { 1, 0, 0 }, { 0, 1 }},
+    {{  0.5, -0.5, -0.5 }, { 1, 0, 0 }, { 1, 1 }},
     // -z
-    {{  0.5,  0.5, -0.5 }, { 0, 0 }},
-    {{ -0.5,  0.5, -0.5 }, { 1, 0 }},
-    {{  0.5, -0.5, -0.5 }, { 0, 1 }},
-    {{ -0.5, -0.5, -0.5 }, { 1, 1 }},
+    {{  0.5,  0.5, -0.5 }, { 0, 0, -1 }, { 0, 0 }},
+    {{ -0.5,  0.5, -0.5 }, { 0, 0, -1 }, { 1, 0 }},
+    {{  0.5, -0.5, -0.5 }, { 0, 0, -1 }, { 0, 1 }},
+    {{ -0.5, -0.5, -0.5 }, { 0, 0, -1 }, { 1, 1 }},
     // +y
-    {{  0.5,  0.5, -0.5 }, { 0, 0 }},
-    {{  0.5,  0.5,  0.5 }, { 1, 0 }},
-    {{ -0.5,  0.5, -0.5 }, { 0, 1 }},
-    {{ -0.5,  0.5,  0.5 }, { 1, 1 }},
+    {{  0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 0, 0 }},
+    {{  0.5,  0.5,  0.5 }, { 0, 1, 0 }, { 1, 0 }},
+    {{ -0.5,  0.5, -0.5 }, { 0, 1, 0 }, { 0, 1 }},
+    {{ -0.5,  0.5,  0.5 }, { 0, 1, 0 }, { 1, 1 }},
     // -y
-    {{ -0.5, -0.5, -0.5 }, { 0, 0 }},
-    {{ -0.5, -0.5,  0.5 }, { 1, 0 }},
-    {{  0.5, -0.5, -0.5 }, { 0, 1 }},
-    {{  0.5, -0.5,  0.5 }, { 1, 1 }}
+    {{ -0.5, -0.5, -0.5 }, { 0, -1, 0 }, { 0, 0 }},
+    {{ -0.5, -0.5,  0.5 }, { 0, -1, 0 }, { 1, 0 }},
+    {{  0.5, -0.5, -0.5 }, { 0, -1, 0 }, { 0, 1 }},
+    {{  0.5, -0.5,  0.5 }, { 0, -1, 0 }, { 1, 1 }}
 });
 
 // Textured cube indices
@@ -94,7 +101,7 @@ struct CubemapVertex {
         };
     }
 
-    static std::array<VkVertexInputAttributeDescription, 1> attribute_descriptions() {
+    static auto attribute_descriptions() {
         return std::to_array<VkVertexInputAttributeDescription>({
             {
                 .location = 0,
@@ -2226,6 +2233,8 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
 
     imgui_text("Settings");
     ImGui::Checkbox("V-sync", &m_vsync);
+
+    imgui_text("{} {} {}", m_camera.dir().x, m_camera.dir().y, m_camera.dir().z);
 
     if (m_vsync != m_swapchain->vsync()) {
         // Update swapchain if vsync setting changed
