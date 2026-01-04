@@ -1,7 +1,4 @@
-struct CameraUBO {
-    float4x4 view;
-    float4x4 proj;
-};
+import "mod/camera.slang";
 
 struct CubeUBO {
     float4x4 model;

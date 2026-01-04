@@ -38,6 +38,7 @@ struct Vertex {
     }
 };
 
+
 // Textured cube vertices
 constexpr auto VERTICES = std::to_array<Vertex>({
     // -x
@@ -80,6 +81,55 @@ constexpr auto INDICES = std::to_array<u16>({
     12, 13, 14, 13, 15, 14,
     16, 17, 18, 17, 19, 18,
     20, 21, 22, 21, 23, 22,
+});
+
+struct CubemapVertex {
+    glm::vec3 dir;
+
+    static VkVertexInputBindingDescription binding_description() {
+        return {
+            .binding = 0,
+            .stride = sizeof(CubemapVertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+        };
+    }
+
+    static std::array<VkVertexInputAttributeDescription, 1> attribute_descriptions() {
+        return std::to_array<VkVertexInputAttributeDescription>({
+            {
+                .location = 0,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
+                .offset = offsetof(CubemapVertex, dir),
+            },
+        });
+    }
+};
+
+constexpr auto CUBEMAP_VERTICES = std::to_array<CubemapVertex>({
+    {{ -1, -1, -1 }},
+    {{ -1, -1, 1 }},
+    {{ -1, 1, -1 }},
+    {{ -1, 1, 1 }},
+    {{ 1, -1, -1 }},
+    {{ 1, -1, 1 }},
+    {{ 1, 1, -1 }},
+    {{ 1, 1, 1 }},
+});
+
+constexpr auto CUBEMAP_INDICES = std::to_array<u16>({
+    // -z  
+    2, 6, 0, 6, 4, 0,
+    // +x
+    6, 7, 4, 7, 5, 4,
+    // +z
+    7, 3, 5, 3, 1, 5,
+    // -x
+    3, 2, 1, 2, 0, 1,
+    // +y
+    3, 7, 2, 7, 6, 2,
+    // -y
+    0, 4, 1, 4, 5, 1,
 });
 
 struct CameraUBO {
@@ -251,6 +301,11 @@ void Engine::quit() {
         vkDestroyBuffer(device(), ubo, nullptr);
     }
 
+    vkDestroySampler(device(), m_cubemap_sampler, nullptr);
+    vkDestroyImageView(device(), m_cubemap_image_view, nullptr);
+    vkDestroyImage(device(), m_cubemap_image, nullptr);
+    vkFreeMemory(device(), m_cubemap_memory, nullptr);
+
     vkDestroySampler(device(), m_texture_sampler, nullptr);
     vkDestroyImageView(device(), m_texture_image_view, nullptr);
     vkFreeMemory(device(), m_texture_image_memory, nullptr);
@@ -260,12 +315,18 @@ void Engine::quit() {
     vkDestroyImage(device(), m_depth_image, nullptr);
     vkFreeMemory(device(), m_depth_image_memory, nullptr);
 
-    vkFreeMemory(device(), m_index_buffer_memory, nullptr);
-    vkDestroyBuffer(device(), m_index_buffer, nullptr);
+    vkFreeMemory(device(), m_cubemap_vertex_buffer_memory, nullptr);
+    vkFreeMemory(device(), m_cubemap_index_buffer_memory, nullptr);
+    vkDestroyBuffer(device(), m_cubemap_vertex_buffer, nullptr);
+    vkDestroyBuffer(device(), m_cubemap_index_buffer, nullptr);
 
+    vkFreeMemory(device(), m_index_buffer_memory, nullptr);
     vkFreeMemory(device(), m_vertex_buffer_memory, nullptr);
+    vkDestroyBuffer(device(), m_index_buffer, nullptr);
     vkDestroyBuffer(device(), m_vertex_buffer, nullptr);
 
+    vkDestroyPipeline(device(), m_cubemap_pipeline, nullptr);
+    vkDestroyPipelineLayout(device(), m_cubemap_pipeline_layout, nullptr);
     vkDestroyPipeline(device(), m_pipeline, nullptr);
     vkDestroyPipelineLayout(device(), m_pipeline_layout, nullptr);
 
@@ -307,9 +368,14 @@ void Engine::init_graphics() {
     create_texture_image_view();
     create_texture_sampler();
 
+    create_cubemap_image();
+    create_cubemap_image_view();
+    create_cubemap_sampler();
+
     create_descriptor_set_layouts();
 
     create_graphics_pipeline();
+    create_cubemap_pipeline();
 
     create_camera_ubos();
 
@@ -319,6 +385,8 @@ void Engine::init_graphics() {
 
     create_vertex_buffer();
     create_index_buffer();
+
+    create_cubemap_buffers();
 
     create_scene_objects();
 
@@ -513,7 +581,7 @@ void Engine::create_descriptor_set_layouts() {
             .pImmutableSamplers = nullptr
         }; 
 
-        VkDescriptorSetLayoutBinding sampler_layout_binding{
+        VkDescriptorSetLayoutBinding soggy_sampler_binding{
             .binding = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
             .descriptorCount = 1,
@@ -521,7 +589,15 @@ void Engine::create_descriptor_set_layouts() {
             .pImmutableSamplers = nullptr,
         };
 
-        const auto bindings = std::to_array({ ubo_binding, sampler_layout_binding });
+        VkDescriptorSetLayoutBinding skybox_sampler_binding{
+            .binding = 2,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .pImmutableSamplers = nullptr
+        };
+
+        const auto bindings = std::to_array({ ubo_binding, soggy_sampler_binding, skybox_sampler_binding });
 
         VkDescriptorSetLayoutCreateInfo layout_create_info{
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -731,13 +807,185 @@ void Engine::create_graphics_pipeline() {
     vkDestroyShaderModule(device(), vert_shader_module, nullptr);
 }
 
+void Engine::create_cubemap_pipeline() {
+    std::vector<u8> vert_shader(std::from_range, get_asset<"shaders/skybox.vertex.spv">());
+    std::vector<u8> frag_shader(std::from_range, get_asset<"shaders/skybox.fragment.spv">());
+
+    VkShaderModuleCreateInfo vert_module_info{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = vert_shader.size(),
+        .pCode = reinterpret_cast<const u32*>(vert_shader.data())
+    };
+
+    VkShaderModule vert_shader_module;
+    vulkan_check_res(
+        vkCreateShaderModule(device(), &vert_module_info, nullptr, &vert_shader_module),
+        "failed to create skybox vertex shader"
+    );
+
+    VkShaderModuleCreateInfo frag_module_info{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = frag_shader.size(),
+        .pCode = reinterpret_cast<const u32*>(frag_shader.data())
+    };
+
+    VkShaderModule frag_shader_module;
+    vulkan_check_res(
+        vkCreateShaderModule(device(), &frag_module_info, nullptr, &frag_shader_module),
+        "failed to create skybox fragment shader"
+    );
+
+    VkPipelineShaderStageCreateInfo vert_stage_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vert_shader_module,
+        .pName = "main"
+    };
+
+    VkPipelineShaderStageCreateInfo frag_stage_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = frag_shader_module,
+        .pName = "main"
+    };
+
+    VkPipelineShaderStageCreateInfo shader_stages[] = {
+        vert_stage_info,
+        frag_stage_info
+    };
+
+    auto binding_desc = CubemapVertex::binding_description();
+    auto attr_descs = CubemapVertex::attribute_descriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &binding_desc,
+        .vertexAttributeDescriptionCount = (u32) attr_descs.size(),
+        .pVertexAttributeDescriptions = attr_descs.data()
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE
+    };
+
+    VkPipelineViewportStateCreateInfo viewport_state{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = nullptr,  // Viewport is dynamic
+        .scissorCount = 1,
+        .pScissors = nullptr,   // Scissor is dynamic
+    };
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .lineWidth = 1,
+    };
+
+    VkPipelineMultisampleStateCreateInfo multisampling{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .sampleShadingEnable = VK_FALSE,
+    };
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .depthBoundsTestEnable = VK_FALSE,
+        .stencilTestEnable = VK_FALSE
+    };
+
+    VkPipelineColorBlendAttachmentState color_blend_attachments{
+        .blendEnable = VK_FALSE,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | 
+                          VK_COLOR_COMPONENT_G_BIT | 
+                          VK_COLOR_COMPONENT_B_BIT | 
+                          VK_COLOR_COMPONENT_A_BIT,
+    };
+
+    VkPipelineColorBlendStateCreateInfo color_blending{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = VK_FALSE,
+        .attachmentCount = 1,
+        .pAttachments = &color_blend_attachments
+    };
+
+    VkDynamicState dynamic_state[] = { 
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamic_state_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2,
+        .pDynamicStates = dynamic_state
+    };
+
+    const auto set_layouts = std::to_array({ m_descriptor_set_layout });
+    VkPipelineLayoutCreateInfo pipeline_layout_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = (u32) set_layouts.size(),
+        .pSetLayouts = set_layouts.data()
+    };
+
+    vulkan_check_res(
+        vkCreatePipelineLayout(device(), &pipeline_layout_info, nullptr, &m_cubemap_pipeline_layout),
+        "failed to create pipeline layout"
+    );
+
+    const auto color_attachment_formats = std::to_array({ m_swapchain->surface_format().format });
+
+    VkPipelineRenderingCreateInfo pipeline_rendering_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = color_attachment_formats.size(),
+        .pColorAttachmentFormats = color_attachment_formats.data(),
+        .depthAttachmentFormat = VK_FORMAT_D32_SFLOAT,
+    };
+
+    VkGraphicsPipelineCreateInfo pipeline_info{
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &pipeline_rendering_info,
+        .stageCount = 2,
+        .pStages = shader_stages,
+        .pVertexInputState = &vertex_input_info,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport_state,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = &depth_stencil,
+        .pColorBlendState = &color_blending,
+        .pDynamicState = &dynamic_state_info,
+        .layout = m_cubemap_pipeline_layout,
+        // We use dynamic rendering instead of a render pass.
+        .renderPass = VK_NULL_HANDLE,
+        .subpass = 0
+    };
+
+    vulkan_check_res(
+        vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_cubemap_pipeline),
+        "failed to create graphics pipeline"
+    );
+
+    vkDestroyShaderModule(device(), frag_shader_module, nullptr);
+    vkDestroyShaderModule(device(), vert_shader_module, nullptr);
+}
+
 void Engine::create_depth_image() {
     // TODO: Test for allowed formats
     const auto depth_format = VK_FORMAT_D32_SFLOAT;
     u32 width = m_swapchain->extent().width;
     u32 height = m_swapchain->extent().height;
 
-    create_image(
+    create_image_2d(
         width,
         height,
         depth_format,
@@ -792,7 +1040,7 @@ void Engine::create_texture_image() {
     vkUnmapMemory(device(), staging_buffer_memory);
 
     // Create the texture image.
-    create_image(
+    create_image_2d(
         image->width(), 
         image->height(), 
         VK_FORMAT_R8G8B8A8_SRGB, 
@@ -903,6 +1151,230 @@ void Engine::create_texture_sampler() {
     );
 }
 
+void Engine::create_cubemap_image() {
+    // Load the skybox image.
+    auto skybox_image = stb::Image::from_bytes(get_asset<"images/skybox.png">(), 4);
+    if (!skybox_image)
+        throw std::runtime_error("Failed to load skybox.png");
+
+    // Convert from the equirectangular image to six cubemap faces.
+    const u32 face_size = skybox_image->height();
+    std::vector<std::vector<u8>> face_data;
+
+    face_data.resize(6);
+    for (auto& face : face_data) {
+        face.resize(face_size * face_size * 4);
+    }
+
+    auto get_direction = [](u8 face, f32 u, f32 v) -> glm::vec3 {
+        switch (face) {
+        case 0: return { 1, -v, -u };
+        case 1: return { -1, -v, u };
+        case 2: return { u, 1, v };
+        case 3: return { u, -1, -v };
+        case 4: return { u, -v, 1 };
+        case 5: return { -u, -v, -1 };
+        default: 
+            return {};
+        }
+    };
+
+    auto get_pixel = [&](u32 x, u32 y) -> glm::vec4 {
+        const u8* pixel = skybox_image->data() + (y * skybox_image->width() + x) * 4;
+        return {
+            pixel[0] * 255.f,
+            pixel[1] * 255.f,
+            pixel[2] * 255.f,
+            pixel[3] * 255.f
+        };
+    };
+
+    for (u8 face = 0; face < 6; face++) {
+        u8* data = face_data[face].data();
+
+        for (u32 y = 0; y < face_size; y++) {
+            for (u32 x = 0; x < face_size; x++) {
+                f32 face_u = 2 * ((f32) x / face_size) - 1;
+                f32 face_v = 2 * ((f32) y / face_size) - 1;
+
+                auto dir = glm::normalize(get_direction(face, face_u, face_v));
+
+                f32 theta = std::acos(dir.y);
+                f32 phi = std::atan2(dir.z, dir.x);
+
+                f32 u = phi / (2 * std::numbers::pi_v<f32>);
+                f32 v = theta / std::numbers::pi_v<f32>;
+
+                // phi ranges from [-pi, pi] so correct it after dividing.
+                if (u < 0)
+                    u += 1;
+
+                u = std::clamp(u * (f32) skybox_image->width(), 0.f, (f32) skybox_image->width() - 1);
+                v = std::clamp(v * (f32) skybox_image->height(), 0.f, (f32) skybox_image->height() - 1);
+
+                // Bilinear interpolation...
+                u32 u1 = std::floor(u);
+                u32 v1 = std::floor(v);
+                u32 u2 = std::min(u1 + 1, skybox_image->width() - 1);
+                u32 v2 = std::min(v1 + 1, skybox_image->height() - 1);
+
+                f32 s = u - u1;
+                f32 t = v - v1;
+
+                glm::vec4 tl = get_pixel(u1, v1);
+                glm::vec4 tr = get_pixel(u2, v1);
+                glm::vec4 bl = get_pixel(u1, v2);
+                glm::vec4 br = get_pixel(u2, v2);
+
+                glm::vec4 color = glm::mix(glm::mix(tl, tr, s), glm::mix(bl, br, s), t);
+
+                // Write pixel value.
+                u8* dst = data + (y * face_size + x) * 4;
+                dst[0] = color[0] / 255.f;
+                dst[1] = color[1] / 255.f;
+                dst[2] = color[2] / 255.f;
+                dst[3] = color[3] / 255.f;
+            }
+        }
+    }
+
+    // Create a staging buffer to upload our data to.
+    u64 image_layer_size = face_size * face_size * 4;
+    u64 image_size = image_layer_size * 6;
+
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_mem;
+
+    create_buffer(
+        image_size, 
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+        staging_buffer, 
+        staging_mem
+    );
+
+    void* data;
+    vkMapMemory(device(), staging_mem, 0, image_size, 0, &data);
+    for (u8 i = 0; i < 6; i++) {
+        std::memcpy(static_cast<u8*>(data) + image_layer_size * i, face_data[i].data(), image_layer_size);
+    }
+    vkUnmapMemory(device(), staging_mem);
+
+    // Create the cubemap image.
+    create_image_cube(
+        face_size, 
+        VK_FORMAT_R8G8B8A8_SRGB, 
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+        m_cubemap_image, 
+        m_cubemap_memory
+    );
+
+    VkCommandBuffer command_buffer = begin_single_time_commands();
+
+    transition_image_layout(
+        command_buffer,
+        m_cubemap_image,
+        0,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_IMAGE_LAYOUT_UNDEFINED,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        6
+    );
+
+    std::array<VkBufferImageCopy, 6> regions;
+    for (u8 i = 0; i < 6; i++) {
+        regions[i] = {
+            .bufferOffset = image_layer_size * i,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel = 0,
+                .baseArrayLayer = i,
+                .layerCount = 1,
+            },
+            .imageOffset = { .x = 0, .y = 0, .z = 0 },
+            .imageExtent = { .width = face_size, .height = face_size, .depth = 1 }
+        };
+    }
+
+    vkCmdCopyBufferToImage(
+        command_buffer,
+        staging_buffer,
+        m_cubemap_image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        regions.size(),
+        regions.data()
+    );
+
+    transition_image_layout(
+        command_buffer,
+        m_cubemap_image,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_ACCESS_SHADER_READ_BIT,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        6
+    );
+
+    end_single_time_commands(command_buffer);
+
+    // Cleanup staging buffer.
+    vkDestroyBuffer(device(), staging_buffer, nullptr);
+    vkFreeMemory(device(), staging_mem, nullptr);
+}
+
+void Engine::create_cubemap_image_view() {
+    VkImageViewCreateInfo view_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = m_cubemap_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_CUBE,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 6,
+        }
+    };
+    vulkan_check_res(
+        vkCreateImageView(device(), &view_info, nullptr, &m_cubemap_image_view),
+        "failed to create cubemap image view"
+    );
+}
+
+void Engine::create_cubemap_sampler() {
+    VkSamplerCreateInfo sampler_info{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_LINEAR,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        .mipLodBias = 0,
+        .anisotropyEnable = VK_FALSE,
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0,
+        .maxLod = 0,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
+    };
+    vulkan_check_res(
+        vkCreateSampler(device(), &sampler_info, nullptr, &m_cubemap_sampler),
+        "failed to create cubemap sampler"
+    );
+}
+
 void Engine::create_camera_ubos() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         create_buffer(
@@ -959,6 +1431,7 @@ void Engine::create_descriptor_sets() {
         "failed to allocate descriptor sets"
     );
 
+    // Cube descriptor sets
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo buffer_info{
             .buffer = m_camera_ubos[i],
@@ -966,10 +1439,16 @@ void Engine::create_descriptor_sets() {
             .range = sizeof(CameraUBO),
         };
 
-        VkDescriptorImageInfo image_info{
+        VkDescriptorImageInfo soggy_image_info{
             .sampler = m_texture_sampler,
             .imageView = m_texture_image_view,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        };
+
+        VkDescriptorImageInfo skybox_image_info{
+            .sampler = m_cubemap_sampler,
+            .imageView = m_cubemap_image_view,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
         
         auto descriptor_writes = std::to_array<VkWriteDescriptorSet>({
@@ -989,7 +1468,16 @@ void Engine::create_descriptor_sets() {
                 .dstArrayElement = 0,
                 .descriptorCount = 1,
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-                .pImageInfo = &image_info
+                .pImageInfo = &soggy_image_info
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = m_descriptor_sets[i],
+                .dstBinding = 2,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &skybox_image_info
             }
         });
 
@@ -1031,6 +1519,41 @@ void Engine::create_index_buffer() {
     vkMapMemory(device(), m_index_buffer_memory, 0, size, 0, &data);
     memcpy(data, INDICES.data(), size);
     vkUnmapMemory(device(), m_index_buffer_memory);
+}
+
+void Engine::create_cubemap_buffers() {
+    usize vertex_size = sizeof(Vertex) * CUBEMAP_VERTICES.size();
+
+    create_buffer(
+        vertex_size,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        m_cubemap_vertex_buffer,
+        m_cubemap_vertex_buffer_memory
+    );
+
+    // Upload vertex data.
+    void* vertex_data;
+    vkMapMemory(device(), m_cubemap_vertex_buffer_memory, 0, vertex_size, 0, &vertex_data);
+    memcpy(vertex_data, CUBEMAP_VERTICES.data(), vertex_size);
+    vkUnmapMemory(device(), m_cubemap_vertex_buffer_memory);
+
+
+    usize index_size = sizeof(u16) * CUBEMAP_INDICES.size();
+
+    create_buffer(
+        index_size,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        m_cubemap_index_buffer,
+        m_cubemap_index_buffer_memory
+    );
+
+    // Upload index data.
+    void* index_data;
+    vkMapMemory(device(), m_cubemap_index_buffer_memory, 0, index_size, 0, &index_data);
+    memcpy(index_data, CUBEMAP_INDICES.data(), index_size);
+    vkUnmapMemory(device(), m_cubemap_index_buffer_memory);
 }
 
 void Engine::create_scene_objects() {
@@ -1206,7 +1729,7 @@ void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropert
     vkBindBufferMemory(device(), buf, mem, 0);
 }
 
-void Engine::create_image(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem) {
+void Engine::create_image_2d(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem) {
     VkImageCreateInfo image_info{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .flags = 0,
@@ -1215,6 +1738,43 @@ void Engine::create_image(u32 width, u32 height, VkFormat format, VkImageUsageFl
         .extent = { .width = width, .height = height, .depth = 1 },
         .mipLevels = 1,
         .arrayLayers = 1,
+        .samples = VK_SAMPLE_COUNT_1_BIT,
+        .tiling = VK_IMAGE_TILING_OPTIMAL,
+        .usage = usage,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED
+    };
+    vulkan_check_res(
+        vkCreateImage(device(), &image_info, nullptr, &image),
+        "failed to create image"
+    );
+
+    // Allocate memory for the image.
+    VkMemoryRequirements mem_requirements;
+    vkGetImageMemoryRequirements(device(), image, &mem_requirements);
+
+    VkMemoryAllocateInfo alloc_info{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .allocationSize = mem_requirements.size,
+        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, mem_flags),
+    };
+    vulkan_check_res(
+        vkAllocateMemory(device(), &alloc_info, nullptr, &mem),
+        "failed to allocate image memory"
+    );
+
+    vkBindImageMemory(device(), image, mem, 0);
+}
+
+void Engine::create_image_cube(u32 size, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem) {
+    VkImageCreateInfo image_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+        .flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT,
+        .imageType = VK_IMAGE_TYPE_2D,
+        .format = format,
+        .extent = { .width = size, .height = size, .depth = 1 },
+        .mipLevels = 1,
+        .arrayLayers = 6,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = usage,
@@ -1288,7 +1848,7 @@ void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
     vkFreeCommandBuffers(device(), m_transient_command_pool, 1, &command_buffer);
 }
 
-void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask) {
+void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask, u32 layer_count) {
     // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
     VkImageMemoryBarrier memory_barrier_1{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -1302,7 +1862,7 @@ void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage ima
             .baseMipLevel = 0,
             .levelCount = 1,
             .baseArrayLayer = 0,
-            .layerCount = 1,
+            .layerCount = layer_count,
         }
     };
     vkCmdPipelineBarrier(
@@ -1441,17 +2001,15 @@ void Engine::render_frame() {
     );
 
     {
-        auto now = std::chrono::steady_clock::now();
-        static auto start = now;
-
-        f32 seconds = std::chrono::duration_cast<std::chrono::duration<f32>>(now - start).count();
-
         auto extent = m_swapchain->extent();
-        auto aspect = (f32) extent.width / extent.height;
 
-        CameraUBO camera_ubo;
-        camera_ubo.view = m_camera.calc_view_mtx();
-        camera_ubo.proj = m_camera.calc_proj_mtx(aspect);
+        m_camera.set_aspect_ratio((f32) extent.width / extent.height);
+        m_camera.update_matrices();
+
+        CameraUBO camera_ubo{
+            .view = m_camera.view_mtx(),
+            .proj = m_camera.proj_mtx()
+        };
 
         // Write Camera UBO.
         memcpy(m_camera_ubo_data[m_current_frame], &camera_ubo, sizeof(CameraUBO));
@@ -1544,22 +2102,37 @@ void Engine::render_frame() {
         .extent = m_swapchain->extent()
     };
 
-    VkBuffer vertex_bufs[] = { m_vertex_buffer };
-    VkDeviceSize offsets[] = { 0 };
+    {
+        VkBuffer vertex_bufs[] = { m_cubemap_vertex_buffer };
+        VkDeviceSize offsets[] = { 0 };
 
-    vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
-    vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-    vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-    vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
-    vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubemap_pipeline);
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
+        vkCmdBindIndexBuffer(command_buffer, m_cubemap_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubemap_pipeline_layout, 0, 1, &m_descriptor_sets[m_current_frame], 0, nullptr);
+        vkCmdDrawIndexed(command_buffer, (u32) CUBEMAP_INDICES.size(), 1, 0, 0, 0);
+    }
 
-    for (const auto& object : m_scene_objects) {
-        // Bind the object's descriptor set.
-        const auto descriptor_sets = std::to_array({ m_descriptor_sets[m_current_frame], object.m_descriptor_sets[m_current_frame] });
-        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
+    {
+        VkBuffer vertex_bufs[] = { m_vertex_buffer };
+        VkDeviceSize offsets[] = { 0 };
 
-        // Draw the object.
-        vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
+        vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+
+        for (const auto& object : m_scene_objects) {
+            // Bind the object's descriptor set.
+            const auto descriptor_sets = std::to_array({ m_descriptor_sets[m_current_frame], object.m_descriptor_sets[m_current_frame] });
+            vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
+
+            // Draw the object.
+            vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
+        }
     }
 
     vkCmdEndRendering(command_buffer);

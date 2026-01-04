@@ -29,32 +29,45 @@ private:
 
     void init_scene();
 
+
     void create_instance();
     void create_window_surface();
     void create_command_pools();
     void create_descriptor_set_layouts();
     void create_graphics_pipeline();
+    void create_cubemap_pipeline();
     void create_depth_image();
+
     void create_texture_image();
     void create_texture_image_view();
     void create_texture_sampler();
+
+    void create_cubemap_image();
+    void create_cubemap_image_view();
+    void create_cubemap_sampler();
+
     void create_camera_ubos();
+
     void create_descriptor_pool();
     void create_descriptor_sets();
+
     void create_vertex_buffer();
     void create_index_buffer();
+    void create_cubemap_buffers();
     void create_scene_objects();
     void create_command_buffers();
     void create_sync_objects();
 
+
     u32 choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_flags);
     void create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& mem);
-    void create_image(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
+    void create_image_2d(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
+    void create_image_cube(u32 size, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
 
     VkCommandBuffer begin_single_time_commands();
     void end_single_time_commands(VkCommandBuffer command_buffer);
 
-    void transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT);
+    void transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT, u32 layer_count = 1);
 
     void recreate_swapchain();   
 
@@ -99,6 +112,9 @@ private:
     VkPipelineLayout m_pipeline_layout;
     VkPipeline m_pipeline;
 
+    VkPipelineLayout m_cubemap_pipeline_layout;
+    VkPipeline m_cubemap_pipeline;
+
     VkBuffer m_vertex_buffer;
     VkDeviceMemory m_vertex_buffer_memory;
 
@@ -109,10 +125,22 @@ private:
     VkDeviceMemory m_depth_image_memory;
     VkImageView m_depth_image_view;
 
+    // Soggy cat texture
     VkImage m_texture_image;
     VkDeviceMemory m_texture_image_memory;
     VkImageView m_texture_image_view;
     VkSampler m_texture_sampler;
+
+    // Cubemap image
+    VkImage m_cubemap_image;
+    VkDeviceMemory m_cubemap_memory;
+    VkImageView m_cubemap_image_view;
+    VkSampler m_cubemap_sampler;
+
+    VkBuffer m_cubemap_vertex_buffer;
+    VkDeviceMemory m_cubemap_vertex_buffer_memory;
+    VkBuffer m_cubemap_index_buffer;
+    VkDeviceMemory m_cubemap_index_buffer_memory;
     
     std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
     std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_camera_ubo_memory;
