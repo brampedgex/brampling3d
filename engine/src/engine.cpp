@@ -895,10 +895,11 @@ void Engine::create_cubemap_pipeline() {
         .sampleShadingEnable = VK_FALSE,
     };
 
+    // Disable depth test/write to prevent the skybox from occluding world geometry
     VkPipelineDepthStencilStateCreateInfo depth_stencil{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-        .depthTestEnable = VK_TRUE,
-        .depthWriteEnable = VK_TRUE,
+        .depthTestEnable = VK_FALSE,
+        .depthWriteEnable = VK_FALSE,
         .depthCompareOp = VK_COMPARE_OP_LESS,
         .depthBoundsTestEnable = VK_FALSE,
         .stencilTestEnable = VK_FALSE
