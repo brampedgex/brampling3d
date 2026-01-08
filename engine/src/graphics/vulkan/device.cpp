@@ -1,11 +1,13 @@
 #include "device.hpp"
 
-VulkanDevice::VulkanDevice(VkInstance instance, VkSurfaceKHR surface) : m_instance(instance) {
+namespace vke { 
+
+Device::Device(VkInstance instance, VkSurfaceKHR surface) : m_instance(instance) {
     choose_physical_device(surface);
     create_device();
 }
 
-void VulkanDevice::choose_physical_device(VkSurfaceKHR surface) {
+void Device::choose_physical_device(VkSurfaceKHR surface) {
     u32 device_count;
     vulkan_check_res(
         vkEnumeratePhysicalDevices(m_instance, &device_count, nullptr),
@@ -62,7 +64,7 @@ void VulkanDevice::choose_physical_device(VkSurfaceKHR surface) {
     vkGetPhysicalDeviceProperties(m_physical_device, &m_physical_device_properties);
 }
 
-void VulkanDevice::create_device() {
+void Device::create_device() {
     f32 queue_priority = 1;
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
     queue_create_infos.push_back({
@@ -123,6 +125,8 @@ void VulkanDevice::create_device() {
     vkGetDeviceQueue(m_device, m_present_family, 0, &m_present_queue);
 }
 
-void VulkanDevice::cleanup() {
+void Device::cleanup() {
     vkDestroyDevice(m_device, nullptr);
+}
+
 }

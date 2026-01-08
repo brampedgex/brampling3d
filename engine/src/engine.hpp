@@ -7,6 +7,8 @@
 
 #include "graphics/vulkan/device.hpp"
 #include "graphics/vulkan/swapchain.hpp"
+#include "graphics/vulkan/memory.hpp"
+#include "graphics/vulkan/buffer.hpp"
 
 static constexpr auto ENGINE_VULKAN_API_VERSION = VK_API_VERSION_1_3;
 
@@ -59,8 +61,6 @@ private:
     void create_sync_objects();
 
 
-    u32 choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_flags);
-    void create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buffer, VkDeviceMemory& mem);
     void create_image_2d(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
     void create_image_cube(u32 size, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
 
@@ -90,9 +90,7 @@ private:
         glm::vec3 m_pos;
         glm::quat m_rot;
 
-        std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_ubos;
-        std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_ubo_memory;
-        std::array<void*, MAX_FRAMES_IN_FLIGHT> m_ubo_data;
+        std::array<vke::Buffer, MAX_FRAMES_IN_FLIGHT> m_ubos;
         std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;
     };
 
@@ -103,8 +101,8 @@ private:
     VkInstance m_instance;
     VkSurfaceKHR m_window_surface;
     
-    std::unique_ptr<VulkanDevice> m_device;
-    std::unique_ptr<VulkanSwapchain> m_swapchain;
+    std::unique_ptr<vke::Device> m_device;
+    std::unique_ptr<vke::Swapchain> m_swapchain;
 
     VkDescriptorSetLayout m_descriptor_set_layout;
     VkDescriptorSetLayout m_scene_object_descriptor_set_layout;
@@ -115,11 +113,8 @@ private:
     VkPipelineLayout m_cubemap_pipeline_layout;
     VkPipeline m_cubemap_pipeline;
 
-    VkBuffer m_vertex_buffer;
-    VkDeviceMemory m_vertex_buffer_memory;
-
-    VkBuffer m_index_buffer;
-    VkDeviceMemory m_index_buffer_memory;
+    vke::Buffer m_cube_vertex_buffer;
+    vke::Buffer m_cube_index_buffer;
 
     VkImage m_depth_image;
     VkDeviceMemory m_depth_image_memory;
@@ -137,14 +132,10 @@ private:
     VkImageView m_cubemap_image_view;
     VkSampler m_cubemap_sampler;
 
-    VkBuffer m_cubemap_vertex_buffer;
-    VkDeviceMemory m_cubemap_vertex_buffer_memory;
-    VkBuffer m_cubemap_index_buffer;
-    VkDeviceMemory m_cubemap_index_buffer_memory;
+    vke::Buffer m_cubemap_vertex_buffer;
+    vke::Buffer m_cubemap_index_buffer;
     
-    std::array<VkBuffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
-    std::array<VkDeviceMemory, MAX_FRAMES_IN_FLIGHT> m_camera_ubo_memory;
-    std::array<void*, MAX_FRAMES_IN_FLIGHT> m_camera_ubo_data;
+    std::array<vke::Buffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
 
     VkDescriptorPool m_descriptor_pool;
     std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;

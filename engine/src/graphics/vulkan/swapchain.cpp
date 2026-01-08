@@ -1,17 +1,19 @@
 #include "swapchain.hpp"
 
-VulkanSwapchain::VulkanSwapchain(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface) :
+namespace vke {
+
+Swapchain::Swapchain(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface) :
         m_physical_device(physical_device),
         m_device(device),
         m_surface(surface) {
     choose_surface_format();
 }
 
-VulkanSwapchain::~VulkanSwapchain() {
+Swapchain::~Swapchain() {
     cleanup();
 }
 
-void VulkanSwapchain::choose_surface_format() {
+void Swapchain::choose_surface_format() {
     u32 format_count;
     vkGetPhysicalDeviceSurfaceFormatsKHR(m_physical_device, m_surface, &format_count, nullptr);
     std::vector<VkSurfaceFormatKHR> surface_formats(format_count);
@@ -28,7 +30,7 @@ void VulkanSwapchain::choose_surface_format() {
     m_surface_format = surface_format;
 }
 
-VkPresentModeKHR VulkanSwapchain::choose_present_mode() {
+VkPresentModeKHR Swapchain::choose_present_mode() {
     // VK_PRESENT_MODE_FIFO_KHR limits frame throughput to refresh rate (ie. vsync), which reduces power consumption.
     if (m_vsync) {
         return VK_PRESENT_MODE_FIFO_KHR;
@@ -54,7 +56,7 @@ VkPresentModeKHR VulkanSwapchain::choose_present_mode() {
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-void VulkanSwapchain::create(u32 window_width, u32 window_height) {
+void Swapchain::create(u32 window_width, u32 window_height) {
     VkSurfaceCapabilitiesKHR capabilities;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(m_physical_device, m_surface, &capabilities);
 
@@ -138,18 +140,18 @@ void VulkanSwapchain::create(u32 window_width, u32 window_height) {
     }
 }
 
-void VulkanSwapchain::reset() {
+void Swapchain::reset() {
     cleanup();
 
     // Swapchain recreation could've happened because of a surface format change (eg. toggling monitor HDR), so we'll re-query the surface format
     choose_surface_format();
 }
 
-VkResult VulkanSwapchain::acquire(VkSemaphore image_available_semaphore, u32& image_index) {
+VkResult Swapchain::acquire(VkSemaphore image_available_semaphore, u32& image_index) {
     return vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX, image_available_semaphore, VK_NULL_HANDLE, &image_index);
 }
 
-VkResult VulkanSwapchain::present(VkQueue present_queue, std::span<VkSemaphore> wait_semaphores, u32 image_index) {
+VkResult Swapchain::present(VkQueue present_queue, std::span<VkSemaphore> wait_semaphores, u32 image_index) {
     VkPresentInfoKHR present_info{
         .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
         .waitSemaphoreCount = (u32) wait_semaphores.size(),
@@ -162,7 +164,7 @@ VkResult VulkanSwapchain::present(VkQueue present_queue, std::span<VkSemaphore> 
     return vkQueuePresentKHR(present_queue, &present_info);
 }
 
-void VulkanSwapchain::cleanup() {
+void Swapchain::cleanup() {
     if (m_swapchain != VK_NULL_HANDLE)
         vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
 
@@ -176,4 +178,6 @@ void VulkanSwapchain::cleanup() {
     m_images.clear();
     m_image_views.clear();
     m_submit_semaphores.clear();
+}
+
 }

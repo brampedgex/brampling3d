@@ -2,10 +2,12 @@
 
 #include "../../util/vulkan.hpp"
 
-class VulkanSwapchain {
+namespace vke {
+
+class Swapchain {
 public:
-    VulkanSwapchain(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface);
-    ~VulkanSwapchain();
+    Swapchain(VkPhysicalDevice physical_device, VkDevice device, VkSurfaceKHR surface);
+    ~Swapchain();
 
     /// Creates the swapchain.
     /// window_width and window_height are the dimensions of the window.
@@ -61,3 +63,5 @@ private:
 
     bool m_vsync = true;
 };
+
+}

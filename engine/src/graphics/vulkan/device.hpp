@@ -1,10 +1,14 @@
+#pragma once
+
 #include "../../util/vulkan.hpp"
 
+namespace vke {
+
 /// Manages the VkDevice and associated queues
-class VulkanDevice {
+class Device {
 public:
-    VulkanDevice(VkInstance instance, VkSurfaceKHR surface);
-    ~VulkanDevice() {
+    Device(VkInstance instance, VkSurfaceKHR surface);
+    ~Device() {
         cleanup();
     }
 
@@ -40,3 +44,5 @@ private:
     VkQueue m_graphics_queue;
     VkQueue m_present_queue;
 };
+
+}

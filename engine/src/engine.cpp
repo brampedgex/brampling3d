@@ -286,13 +286,9 @@ void Engine::quit() {
     vkDestroyCommandPool(device(), m_command_pool, nullptr);
     vkDestroyCommandPool(device(), m_transient_command_pool, nullptr);
 
-    for (const auto& object : m_scene_objects) {
-        for (const auto ubo : object.m_ubos) {
-            vkDestroyBuffer(device(), ubo, nullptr);
-        }
-        for (const auto mem : object.m_ubo_memory) {
-            vkUnmapMemory(device(), mem);
-            vkFreeMemory(device(), mem, nullptr);
+    for (auto& object : m_scene_objects) {
+        for (auto& ubo : object.m_ubos) {
+            ubo.cleanup();
         }
         vkFreeDescriptorSets(device(), m_descriptor_pool, object.m_descriptor_sets.size(), object.m_descriptor_sets.data());
     }
@@ -300,12 +296,8 @@ void Engine::quit() {
     vkFreeDescriptorSets(device(), m_descriptor_pool, m_descriptor_sets.size(), m_descriptor_sets.data());
     vkDestroyDescriptorPool(device(), m_descriptor_pool, nullptr);
 
-    for (const auto mem : m_camera_ubo_memory) {
-        vkUnmapMemory(device(), mem);
-        vkFreeMemory(device(), mem, nullptr);
-    }
-    for (const auto ubo : m_camera_ubos) {
-        vkDestroyBuffer(device(), ubo, nullptr);
+    for (auto& ubo : m_camera_ubos) {
+        ubo.cleanup();
     }
 
     vkDestroySampler(device(), m_cubemap_sampler, nullptr);
@@ -322,15 +314,11 @@ void Engine::quit() {
     vkDestroyImage(device(), m_depth_image, nullptr);
     vkFreeMemory(device(), m_depth_image_memory, nullptr);
 
-    vkFreeMemory(device(), m_cubemap_vertex_buffer_memory, nullptr);
-    vkFreeMemory(device(), m_cubemap_index_buffer_memory, nullptr);
-    vkDestroyBuffer(device(), m_cubemap_vertex_buffer, nullptr);
-    vkDestroyBuffer(device(), m_cubemap_index_buffer, nullptr);
+    m_cubemap_vertex_buffer.cleanup();
+    m_cubemap_index_buffer.cleanup();
 
-    vkFreeMemory(device(), m_index_buffer_memory, nullptr);
-    vkFreeMemory(device(), m_vertex_buffer_memory, nullptr);
-    vkDestroyBuffer(device(), m_index_buffer, nullptr);
-    vkDestroyBuffer(device(), m_vertex_buffer, nullptr);
+    m_cube_vertex_buffer.cleanup();
+    m_cube_index_buffer.cleanup();
 
     vkDestroyPipeline(device(), m_cubemap_pipeline, nullptr);
     vkDestroyPipelineLayout(device(), m_cubemap_pipeline_layout, nullptr);
@@ -360,8 +348,8 @@ void Engine::init_graphics() {
 
     create_window_surface();
     
-    m_device = std::make_unique<VulkanDevice>(m_instance, m_window_surface);
-    m_swapchain = std::make_unique<VulkanSwapchain>(physical_device(), device(), m_window_surface);
+    m_device = std::make_unique<vke::Device>(m_instance, m_window_surface);
+    m_swapchain = std::make_unique<vke::Swapchain>(physical_device(), device(), m_window_surface);
 
     // Do things that depend on surface_format...
 
@@ -453,7 +441,7 @@ void Engine::init_scene() {
     m_camera.set_pos({ 0, 0, 10 });
     m_camera.set_pitch(0);
     m_camera.set_yaw(0);
-    m_camera.set_fov(45);
+    m_camera.set_fov(70);
 
     m_camera.update_rot();
 }
@@ -1031,21 +1019,15 @@ void Engine::create_texture_image() {
     VkDeviceSize image_size = image->width() * image->height() * 4;
 
     // Create a staging buffer to upload our texture to.
-    VkBuffer staging_buffer;
-    VkDeviceMemory staging_buffer_memory;
-    create_buffer(
+    vke::Buffer staging_buffer = vke::Buffer::create(
+        *m_device,
         image_size, 
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-        staging_buffer, 
-        staging_buffer_memory
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
     // Upload the texture.
-    void* data;
-    vkMapMemory(device(), staging_buffer_memory, 0, image_size, 0, &data);
-    memcpy(data, image->data(), (usize) image_size);
-    vkUnmapMemory(device(), staging_buffer_memory);
+    memcpy(staging_buffer.data(), image->data(), (usize) image_size);
 
     // Create the texture image.
     create_image_2d(
@@ -1087,7 +1069,7 @@ void Engine::create_texture_image() {
     };
     vkCmdCopyBufferToImage(
         command_buffer,
-        staging_buffer,
+        staging_buffer.buffer(),
         m_texture_image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         1,
@@ -1108,9 +1090,7 @@ void Engine::create_texture_image() {
 
     end_single_time_commands(command_buffer);
 
-    // Cleanup staging buffer.
-    vkDestroyBuffer(device(), staging_buffer, nullptr);
-    vkFreeMemory(device(), staging_buffer_memory, nullptr);
+    // staging_buffer is cleaned up for us. NOTE: If we shift to some kind of smart system for asset transfer we will need to properly manage the resource lifetimes
 }
 
 void Engine::create_texture_image_view() {
@@ -1250,23 +1230,16 @@ void Engine::create_cubemap_image() {
     u64 image_layer_size = face_size * face_size * 4;
     u64 image_size = image_layer_size * 6;
 
-    VkBuffer staging_buffer;
-    VkDeviceMemory staging_mem;
-
-    create_buffer(
+    vke::Buffer staging_buffer = vke::Buffer::create(
+        *m_device,
         image_size, 
         VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
-        staging_buffer, 
-        staging_mem
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
-
-    void* data;
-    vkMapMemory(device(), staging_mem, 0, image_size, 0, &data);
+    
     for (u8 i = 0; i < 6; i++) {
-        std::memcpy(static_cast<u8*>(data) + image_layer_size * i, face_data[i].data(), image_layer_size);
+        std::memcpy(staging_buffer.data<u8*>() + image_layer_size * i, face_data[i].data(), image_layer_size);
     }
-    vkUnmapMemory(device(), staging_mem);
 
     // Create the cubemap image.
     create_image_cube(
@@ -1312,7 +1285,7 @@ void Engine::create_cubemap_image() {
 
     vkCmdCopyBufferToImage(
         command_buffer,
-        staging_buffer,
+        staging_buffer.buffer(),
         m_cubemap_image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         regions.size(),
@@ -1333,10 +1306,6 @@ void Engine::create_cubemap_image() {
     );
 
     end_single_time_commands(command_buffer);
-
-    // Cleanup staging buffer.
-    vkDestroyBuffer(device(), staging_buffer, nullptr);
-    vkFreeMemory(device(), staging_mem, nullptr);
 }
 
 void Engine::create_cubemap_image_view() {
@@ -1385,15 +1354,12 @@ void Engine::create_cubemap_sampler() {
 
 void Engine::create_camera_ubos() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-        create_buffer(
+        m_camera_ubos[i] = vke::Buffer::create(
+            *m_device,
             sizeof(CameraUBO),
             VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            m_camera_ubos[i],
-            m_camera_ubo_memory[i]
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT        
         );
-
-        vkMapMemory(device(), m_camera_ubo_memory[i], 0, sizeof(CameraUBO), 0, &m_camera_ubo_data[i]);
     }
 }
 
@@ -1442,7 +1408,7 @@ void Engine::create_descriptor_sets() {
     // Cube descriptor sets
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         VkDescriptorBufferInfo buffer_info{
-            .buffer = m_camera_ubos[i],
+            .buffer = m_camera_ubos[i].buffer(),
             .offset = 0,
             .range = sizeof(CameraUBO),
         };
@@ -1496,72 +1462,56 @@ void Engine::create_descriptor_sets() {
 void Engine::create_vertex_buffer() {
     usize size = sizeof(Vertex) * VERTICES.size();
 
-    create_buffer(
+    m_cube_vertex_buffer = vke::Buffer::create(
+        *m_device,
         size,
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        m_vertex_buffer,
-        m_vertex_buffer_memory
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
     // Upload vertex data.
-    void* data;
-    vkMapMemory(device(), m_vertex_buffer_memory, 0, size, 0, &data);
-    memcpy(data, VERTICES.data(), size);
-    vkUnmapMemory(device(), m_vertex_buffer_memory);
+    memcpy(m_cube_vertex_buffer.data(), VERTICES.data(), size);
 }
 
 void Engine::create_index_buffer() {
     usize size = sizeof(u16) * INDICES.size();
 
-    create_buffer(
+    m_cube_index_buffer = vke::Buffer::create(
+        *m_device,
         size,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        m_index_buffer,
-        m_index_buffer_memory
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
     // Upload index data.
-    void* data;
-    vkMapMemory(device(), m_index_buffer_memory, 0, size, 0, &data);
-    memcpy(data, INDICES.data(), size);
-    vkUnmapMemory(device(), m_index_buffer_memory);
+    memcpy(m_cube_index_buffer.data(), INDICES.data(), size);
 }
 
 void Engine::create_cubemap_buffers() {
     usize vertex_size = sizeof(Vertex) * CUBEMAP_VERTICES.size();
 
-    create_buffer(
+    m_cubemap_vertex_buffer = vke::Buffer::create(
+        *m_device,
         vertex_size,
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        m_cubemap_vertex_buffer,
-        m_cubemap_vertex_buffer_memory
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
     // Upload vertex data.
-    void* vertex_data;
-    vkMapMemory(device(), m_cubemap_vertex_buffer_memory, 0, vertex_size, 0, &vertex_data);
-    memcpy(vertex_data, CUBEMAP_VERTICES.data(), vertex_size);
-    vkUnmapMemory(device(), m_cubemap_vertex_buffer_memory);
+    memcpy(m_cubemap_vertex_buffer.data(), CUBEMAP_VERTICES.data(), vertex_size);
 
 
     usize index_size = sizeof(u16) * CUBEMAP_INDICES.size();
 
-    create_buffer(
+    m_cubemap_index_buffer = vke::Buffer::create(
+        *m_device,
         index_size,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        m_cubemap_index_buffer,
-        m_cubemap_index_buffer_memory
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
     // Upload index data.
-    void* index_data;
-    vkMapMemory(device(), m_cubemap_index_buffer_memory, 0, index_size, 0, &index_data);
-    memcpy(index_data, CUBEMAP_INDICES.data(), index_size);
-    vkUnmapMemory(device(), m_cubemap_index_buffer_memory);
+    memcpy(m_cubemap_index_buffer.data(), CUBEMAP_INDICES.data(), index_size);
 }
 
 void Engine::create_scene_objects() {
@@ -1598,15 +1548,12 @@ void Engine::create_scene_objects() {
         };
 
         for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-            create_buffer(
+            cube.m_ubos[i] = vke::Buffer::create(
+                *m_device,
                 sizeof(CubeUBO),
                 VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                cube.m_ubos[i],
-                cube.m_ubo_memory[i]
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
             );
-
-            vkMapMemory(device(), cube.m_ubo_memory[i], 0, sizeof(CubeUBO), 0, &cube.m_ubo_data[i]);
         }
 
         std::array<VkDescriptorSetLayout, MAX_FRAMES_IN_FLIGHT> layouts;
@@ -1625,7 +1572,7 @@ void Engine::create_scene_objects() {
 
         for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
             VkDescriptorBufferInfo buffer_info{
-                .buffer = cube.m_ubos[i],
+                .buffer = cube.m_ubos[i].buffer(),
                 .offset = 0,
                 .range = sizeof(CubeUBO),
             };
@@ -1644,7 +1591,7 @@ void Engine::create_scene_objects() {
             vkUpdateDescriptorSets(device(), descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
         }
 
-        m_scene_objects.push_back(cube);
+        m_scene_objects.push_back(std::move(cube));
     }
 }
 
@@ -1685,58 +1632,6 @@ void Engine::create_sync_objects() {
     }
 }
 
-u32 Engine::choose_memory_type(u32 memory_type_bits, VkMemoryPropertyFlags mem_flags) {
-    VkPhysicalDeviceMemoryProperties mem_properties;
-    vkGetPhysicalDeviceMemoryProperties(physical_device(), &mem_properties);
-
-    u32 memory_type_index = UINT32_MAX;
-    for (u32 i = 0; i < mem_properties.memoryTypeCount; i++) {
-        if ((memory_type_bits & (1 << i)) &&
-            (mem_properties.memoryTypes[i].propertyFlags & mem_flags)) {
-            memory_type_index = i;
-            break;
-        }
-    }
-    if (memory_type_index == UINT32_MAX) {
-        throw std::runtime_error("failed to find suitable memory type for buffer");
-    }
-
-    return memory_type_index;
-}
-
-void Engine::create_buffer(usize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkBuffer& buf, VkDeviceMemory& mem) {
-    VkBufferCreateInfo buffer_info{
-        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-        .size = size,
-        .usage = usage,
-        .sharingMode = VK_SHARING_MODE_EXCLUSIVE
-    };
-
-    vulkan_check_res(
-        vkCreateBuffer(device(), &buffer_info, nullptr, &buf),
-        "failed to create buffer"
-    );
-
-    // Find suitable memory type.
-    VkMemoryRequirements mem_requirements;
-    vkGetBufferMemoryRequirements(device(), buf, &mem_requirements);
-
-    u32 memory_type_index = choose_memory_type(mem_requirements.memoryTypeBits, mem_flags);
-
-    VkMemoryAllocateInfo alloc_info{
-        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-        .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = memory_type_index
-    };
-
-    vulkan_check_res(
-        vkAllocateMemory(device(), &alloc_info, nullptr, &mem),
-        "failed to allocate buffer memory"
-    );
-
-    vkBindBufferMemory(device(), buf, mem, 0);
-}
-
 void Engine::create_image_2d(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem) {
     VkImageCreateInfo image_info{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -1764,7 +1659,7 @@ void Engine::create_image_2d(u32 width, u32 height, VkFormat format, VkImageUsag
     VkMemoryAllocateInfo alloc_info{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, mem_flags),
+        .memoryTypeIndex = vke::choose_memory_type(physical_device(), mem_requirements.memoryTypeBits, mem_flags),
     };
     vulkan_check_res(
         vkAllocateMemory(device(), &alloc_info, nullptr, &mem),
@@ -1801,7 +1696,7 @@ void Engine::create_image_cube(u32 size, VkFormat format, VkImageUsageFlags usag
     VkMemoryAllocateInfo alloc_info{
         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
         .allocationSize = mem_requirements.size,
-        .memoryTypeIndex = choose_memory_type(mem_requirements.memoryTypeBits, mem_flags),
+        .memoryTypeIndex = vke::choose_memory_type(physical_device(), mem_requirements.memoryTypeBits, mem_flags),
     };
     vulkan_check_res(
         vkAllocateMemory(device(), &alloc_info, nullptr, &mem),
@@ -2020,7 +1915,7 @@ void Engine::render_frame() {
         };
 
         // Write Camera UBO.
-        memcpy(m_camera_ubo_data[m_current_frame], &camera_ubo, sizeof(CameraUBO));
+        memcpy(m_camera_ubos[m_current_frame].data(), &camera_ubo, sizeof(CameraUBO));
 
         for (const auto& object : m_scene_objects) {
             auto id = glm::identity<glm::mat4x4>();
@@ -2032,7 +1927,7 @@ void Engine::render_frame() {
             };
 
             // Write Cube UBO.
-            memcpy(object.m_ubo_data[m_current_frame], &cube_ubo, sizeof(CubeUBO));
+            memcpy(object.m_ubos[m_current_frame].data(), &cube_ubo, sizeof(CubeUBO));
         }
     }
 
@@ -2111,27 +2006,27 @@ void Engine::render_frame() {
     };
 
     {
-        VkBuffer vertex_bufs[] = { m_cubemap_vertex_buffer };
+        VkBuffer vertex_bufs[] = { m_cubemap_vertex_buffer.buffer() };
         VkDeviceSize offsets[] = { 0 };
 
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubemap_pipeline);
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
         vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
-        vkCmdBindIndexBuffer(command_buffer, m_cubemap_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(command_buffer, m_cubemap_index_buffer.buffer(), 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubemap_pipeline_layout, 0, 1, &m_descriptor_sets[m_current_frame], 0, nullptr);
         vkCmdDrawIndexed(command_buffer, (u32) CUBEMAP_INDICES.size(), 1, 0, 0, 0);
     }
 
     {
-        VkBuffer vertex_bufs[] = { m_vertex_buffer };
+        VkBuffer vertex_bufs[] = { m_cube_vertex_buffer.buffer() };
         VkDeviceSize offsets[] = { 0 };
 
         vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
         vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
-        vkCmdBindIndexBuffer(command_buffer, m_index_buffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(command_buffer, m_cube_index_buffer.buffer(), 0, VK_INDEX_TYPE_UINT16);
 
         for (const auto& object : m_scene_objects) {
             // Bind the object's descriptor set.
