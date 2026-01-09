@@ -46,8 +46,7 @@ struct Vertex {
 };
 
 
-// Textured cube vertices
-constexpr auto VERTICES = std::to_array<Vertex>({
+constexpr auto CUBE_VERTICES = std::to_array<Vertex>({
     // -x
     {{ -0.5,  0.5, -0.5 }, { -1, 0, 0 }, { 0, 0 }},
     {{ -0.5,  0.5,  0.5 }, { -1, 0, 0 }, { 1, 0 }},
@@ -80,8 +79,7 @@ constexpr auto VERTICES = std::to_array<Vertex>({
     {{  0.5, -0.5,  0.5 }, { 0, -1, 0 }, { 1, 1 }}
 });
 
-// Textured cube indices
-constexpr auto INDICES = std::to_array<u16>({
+constexpr auto CUBE_INDICES = std::to_array<u16>({
      0,  1,  2,  1,  3,  2,
      4,  5,  6,  5,  7,  6,
      8,  9, 10,  9, 11, 10,
@@ -230,7 +228,7 @@ void Engine::run() {
 
                 m_window_width = (u32) window_event.data1;
                 m_window_height = (u32) window_event.data2;
-                m_window_resized = true;
+                m_need_swapchain_recreate = true;
             } break;
             default:
                 break;
@@ -359,9 +357,9 @@ void Engine::init_graphics() {
 
     create_depth_image();
 
-    create_texture_image();
-    create_texture_image_view();
-    create_texture_sampler();
+    create_cube_texture_image();
+    create_cube_texture_image_view();
+    create_cube_texture_sampler();
 
     create_cubemap_image();
     create_cubemap_image_view();
@@ -1011,7 +1009,7 @@ void Engine::create_depth_image() {
 }
 
 
-void Engine::create_texture_image() {
+void Engine::create_cube_texture_image() {
     auto image = stb::Image::from_bytes(get_asset<"images/soggy.png">(), 4);
     if (!image)
         throw std::runtime_error("failed to load soggy.png");
@@ -1093,7 +1091,7 @@ void Engine::create_texture_image() {
     // staging_buffer is cleaned up for us. NOTE: If we shift to some kind of smart system for asset transfer we will need to properly manage the resource lifetimes
 }
 
-void Engine::create_texture_image_view() {
+void Engine::create_cube_texture_image_view() {
     VkImageViewCreateInfo view_info{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = m_texture_image,
@@ -1113,7 +1111,7 @@ void Engine::create_texture_image_view() {
     );
 }
 
-void Engine::create_texture_sampler() {
+void Engine::create_cube_texture_sampler() {
     VkSamplerCreateInfo sampler_info{
         .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
         .magFilter = VK_FILTER_LINEAR,
@@ -1460,7 +1458,7 @@ void Engine::create_descriptor_sets() {
 }
 
 void Engine::create_vertex_buffer() {
-    usize size = sizeof(Vertex) * VERTICES.size();
+    usize size = sizeof(Vertex) * CUBE_VERTICES.size();
 
     m_cube_vertex_buffer = vke::Buffer::create(
         *m_device,
@@ -1470,11 +1468,11 @@ void Engine::create_vertex_buffer() {
     );
 
     // Upload vertex data.
-    memcpy(m_cube_vertex_buffer.data(), VERTICES.data(), size);
+    memcpy(m_cube_vertex_buffer.data(), CUBE_VERTICES.data(), size);
 }
 
 void Engine::create_index_buffer() {
-    usize size = sizeof(u16) * INDICES.size();
+    usize size = sizeof(u16) * CUBE_INDICES.size();
 
     m_cube_index_buffer = vke::Buffer::create(
         *m_device,
@@ -1484,7 +1482,7 @@ void Engine::create_index_buffer() {
     );
 
     // Upload index data.
-    memcpy(m_cube_index_buffer.data(), INDICES.data(), size);
+    memcpy(m_cube_index_buffer.data(), CUBE_INDICES.data(), size);
 }
 
 void Engine::create_cubemap_buffers() {
@@ -1856,8 +1854,8 @@ void Engine::update() {
 
 void Engine::update_graphics() {
     // Handle swapchain recreation before rendering a frame.
-    if (m_window_resized || m_need_swapchain_recreate) {
-        m_window_resized = m_need_swapchain_recreate = false;
+    if (m_need_swapchain_recreate) {
+        m_need_swapchain_recreate = false;
 
         // We update window size in the SDL resize event, but let's double check 
         // that it's correct in case the state somehow gets out of sync
@@ -2034,7 +2032,7 @@ void Engine::render_frame() {
             vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline_layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
 
             // Draw the object.
-            vkCmdDrawIndexed(command_buffer, (u32) INDICES.size(), 1, 0, 0, 0);
+            vkCmdDrawIndexed(command_buffer, (u32) CUBE_INDICES.size(), 1, 0, 0, 0);
         }
     }
 
@@ -2128,8 +2126,6 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
 
     imgui_text("Settings");
     ImGui::Checkbox("V-sync", &m_vsync);
-
-    imgui_text("{} {} {}", m_camera.dir().x, m_camera.dir().y, m_camera.dir().z);
 
     if (m_vsync != m_swapchain->vsync()) {
         // Update swapchain if vsync setting changed

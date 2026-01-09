@@ -64,6 +64,7 @@ CompileSlangShaders("shaders/soggycube.slang")
 CompileSlangShaders("shaders/skybox.slang")
 EmbedFile("images/soggy.png")
 EmbedFile("images/skybox.png")
+EmbedFile("images/grid.png")
 
 
 if (MSVC OR APPLE)

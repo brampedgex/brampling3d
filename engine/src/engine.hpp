@@ -40,9 +40,9 @@ private:
     void create_cubemap_pipeline();
     void create_depth_image();
 
-    void create_texture_image();
-    void create_texture_image_view();
-    void create_texture_sampler();
+    void create_cube_texture_image();
+    void create_cube_texture_image_view();
+    void create_cube_texture_sampler();
 
     void create_cubemap_image();
     void create_cubemap_image_view();
@@ -115,6 +115,8 @@ private:
 
     vke::Buffer m_cube_vertex_buffer;
     vke::Buffer m_cube_index_buffer;
+    vke::Buffer m_cubemap_vertex_buffer;
+    vke::Buffer m_cubemap_index_buffer;
 
     VkImage m_depth_image;
     VkDeviceMemory m_depth_image_memory;
@@ -131,9 +133,6 @@ private:
     VkDeviceMemory m_cubemap_memory;
     VkImageView m_cubemap_image_view;
     VkSampler m_cubemap_sampler;
-
-    vke::Buffer m_cubemap_vertex_buffer;
-    vke::Buffer m_cubemap_index_buffer;
     
     std::array<vke::Buffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
 
@@ -151,7 +150,6 @@ private:
 
     usize m_current_frame = 0;
     u32 m_image_index;
-    bool m_window_resized = false;
     bool m_need_swapchain_recreate = false;
     bool m_grab_mouse = true;
 
