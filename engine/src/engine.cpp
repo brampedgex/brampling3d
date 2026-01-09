@@ -45,6 +45,28 @@ struct Vertex {
     }
 };
 
+struct CubemapVertex {
+    glm::vec3 dir;
+
+    static VkVertexInputBindingDescription binding_description() {
+        return {
+            .binding = 0,
+            .stride = sizeof(CubemapVertex),
+            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
+        };
+    }
+
+    static auto attribute_descriptions() {
+        return std::to_array<VkVertexInputAttributeDescription>({
+            {
+                .location = 0,
+                .binding = 0,
+                .format = VK_FORMAT_R32G32B32_SFLOAT,
+                .offset = offsetof(CubemapVertex, dir),
+            },
+        });
+    }
+};
 
 constexpr auto CUBE_VERTICES = std::to_array<Vertex>({
     // -x
@@ -87,29 +109,6 @@ constexpr auto CUBE_INDICES = std::to_array<u16>({
     16, 17, 18, 17, 19, 18,
     20, 21, 22, 21, 23, 22,
 });
-
-struct CubemapVertex {
-    glm::vec3 dir;
-
-    static VkVertexInputBindingDescription binding_description() {
-        return {
-            .binding = 0,
-            .stride = sizeof(CubemapVertex),
-            .inputRate = VK_VERTEX_INPUT_RATE_VERTEX
-        };
-    }
-
-    static auto attribute_descriptions() {
-        return std::to_array<VkVertexInputAttributeDescription>({
-            {
-                .location = 0,
-                .binding = 0,
-                .format = VK_FORMAT_R32G32B32_SFLOAT,
-                .offset = offsetof(CubemapVertex, dir),
-            },
-        });
-    }
-};
 
 constexpr auto CUBEMAP_VERTICES = std::to_array<CubemapVertex>({
     {{ -1, -1, -1 }},
