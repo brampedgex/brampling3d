@@ -110,6 +110,17 @@ constexpr auto CUBE_INDICES = std::to_array<u16>({
     20, 21, 22, 21, 23, 22,
 });
 
+constexpr auto GROUND_VERTICES = std::to_array<Vertex>({
+    {{ -100, 0, -100 }, { 0, 1, 0 }, { -100, -100 }},
+    {{ 100, 0, -100 }, { 0, 1, 0 }, { 100, -100 }},
+    {{ -100, 0, 100 }, { 0, 1, 0 }, { -100, 100 }},
+    {{ 100, 0, 100 }, { 0, 1, 0 }, { 100, 100 }},
+});
+
+constexpr auto GROUND_INDICES = std::to_array<u16>({
+    0, 1, 2, 1, 3, 2
+});
+
 constexpr auto CUBEMAP_VERTICES = std::to_array<CubemapVertex>({
     {{ -1, -1, -1 }},
     {{ -1, -1, 1 }},
@@ -307,6 +318,11 @@ void Engine::quit() {
     vkFreeMemory(device(), m_texture_image_memory, nullptr);
     vkDestroyImage(device(), m_texture_image, nullptr);
 
+    vkDestroySampler(device(), m_ground_sampler, nullptr);
+    vkDestroyImageView(device(), m_ground_image_view, nullptr);
+    vkFreeMemory(device(), m_ground_image_memory, nullptr);
+    vkDestroyImage(device(), m_ground_image, nullptr);
+
     vkDestroyImageView(device(), m_depth_image_view, nullptr);
     vkDestroyImage(device(), m_depth_image, nullptr);
     vkFreeMemory(device(), m_depth_image_memory, nullptr);
@@ -317,10 +333,15 @@ void Engine::quit() {
     m_cube_vertex_buffer.cleanup();
     m_cube_index_buffer.cleanup();
 
+    m_ground_vertex_buffer.cleanup();
+    m_ground_index_buffer.cleanup();
+
     vkDestroyPipeline(device(), m_cubemap_pipeline, nullptr);
     vkDestroyPipelineLayout(device(), m_cubemap_pipeline_layout, nullptr);
     vkDestroyPipeline(device(), m_pipeline, nullptr);
     vkDestroyPipelineLayout(device(), m_pipeline_layout, nullptr);
+    vkDestroyPipeline(device(), m_ground_pipeline, nullptr);
+    vkDestroyPipelineLayout(device(), m_ground_pipeline_layout, nullptr);
 
     vkDestroyDescriptorSetLayout(device(), m_descriptor_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(device(), m_scene_object_descriptor_set_layout, nullptr);
@@ -364,10 +385,15 @@ void Engine::init_graphics() {
     create_cubemap_image_view();
     create_cubemap_sampler();
 
+    create_ground_image();
+    create_ground_image_view();
+    create_ground_sampler();
+
     create_descriptor_set_layouts();
 
-    create_graphics_pipeline();
+    create_cube_pipeline();
     create_cubemap_pipeline();
+    create_ground_pipeline();
 
     create_camera_ubos();
 
@@ -375,10 +401,10 @@ void Engine::init_graphics() {
 
     create_descriptor_sets();
 
-    create_vertex_buffer();
-    create_index_buffer();
-
+    // Create scene vertex/index buffers
+    create_cube_buffers();
     create_cubemap_buffers();
+    create_ground_buffers();
 
     create_scene_objects();
 
@@ -435,7 +461,7 @@ void Engine::init_imgui() {
 
 void Engine::init_scene() {
     // Setup camera.
-    m_camera.set_pos({ 0, 0, 10 });
+    m_camera.set_pos({ 0, 5, 10 });
     m_camera.set_pitch(0);
     m_camera.set_yaw(0);
     m_camera.set_fov(70);
@@ -589,7 +615,15 @@ void Engine::create_descriptor_set_layouts() {
             .pImmutableSamplers = nullptr
         };
 
-        const auto bindings = std::to_array({ ubo_binding, soggy_sampler_binding, skybox_sampler_binding });
+        VkDescriptorSetLayoutBinding ground_sampler_binding{
+            .binding = 3,
+            .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+            .descriptorCount = 1,
+            .stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+            .pImmutableSamplers = nullptr,
+        };
+
+        const auto bindings = std::to_array({ ubo_binding, soggy_sampler_binding, skybox_sampler_binding, ground_sampler_binding });
 
         VkDescriptorSetLayoutCreateInfo layout_create_info{
             .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
@@ -627,7 +661,7 @@ void Engine::create_descriptor_set_layouts() {
     }
 }
 
-void Engine::create_graphics_pipeline() {
+void Engine::create_cube_pipeline() {
     std::vector<u8> vert_shader(std::from_range, get_asset<"shaders/soggycube.vertex.spv">());
     std::vector<u8> frag_shader(std::from_range, get_asset<"shaders/soggycube.fragment.spv">());
 
@@ -1007,6 +1041,178 @@ void Engine::create_depth_image() {
     );
 }
 
+void Engine::create_ground_pipeline() {
+    std::vector<u8> vert_shader(std::from_range, get_asset<"shaders/ground.vertex.spv">());
+    std::vector<u8> frag_shader(std::from_range, get_asset<"shaders/ground.fragment.spv">());
+
+    VkShaderModuleCreateInfo vert_module_info{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = vert_shader.size(),
+        .pCode = reinterpret_cast<const u32*>(vert_shader.data())
+    };
+
+    VkShaderModule vert_shader_module;
+    vulkan_check_res(
+        vkCreateShaderModule(device(), &vert_module_info, nullptr, &vert_shader_module),
+        "failed to create skybox vertex shader"
+    );
+
+    VkShaderModuleCreateInfo frag_module_info{
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = frag_shader.size(),
+        .pCode = reinterpret_cast<const u32*>(frag_shader.data())
+    };
+
+    VkShaderModule frag_shader_module;
+    vulkan_check_res(
+        vkCreateShaderModule(device(), &frag_module_info, nullptr, &frag_shader_module),
+        "failed to create skybox fragment shader"
+    );
+
+    VkPipelineShaderStageCreateInfo vert_stage_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vert_shader_module,
+        .pName = "main"
+    };
+
+    VkPipelineShaderStageCreateInfo frag_stage_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = frag_shader_module,
+        .pName = "main"
+    };
+
+    VkPipelineShaderStageCreateInfo shader_stages[] = {
+        vert_stage_info,
+        frag_stage_info
+    };
+
+    auto binding_desc = Vertex::binding_description();
+    auto attr_descs = Vertex::attribute_descriptions();
+
+    VkPipelineVertexInputStateCreateInfo vertex_input_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        .vertexBindingDescriptionCount = 1,
+        .pVertexBindingDescriptions = &binding_desc,
+        .vertexAttributeDescriptionCount = (u32) attr_descs.size(),
+        .pVertexAttributeDescriptions = attr_descs.data()
+    };
+
+    VkPipelineInputAssemblyStateCreateInfo input_assembly{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        .primitiveRestartEnable = VK_FALSE
+    };
+
+    VkPipelineViewportStateCreateInfo viewport_state{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        .viewportCount = 1,
+        .pViewports = nullptr,  // Viewport is dynamic
+        .scissorCount = 1,
+        .pScissors = nullptr,   // Scissor is dynamic
+    };
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        .depthClampEnable = VK_FALSE,
+        .rasterizerDiscardEnable = VK_FALSE,
+        .polygonMode = VK_POLYGON_MODE_FILL,
+        .cullMode = VK_CULL_MODE_BACK_BIT,
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .lineWidth = 1,
+    };
+
+    VkPipelineMultisampleStateCreateInfo multisampling{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,
+        .sampleShadingEnable = VK_FALSE,
+    };
+
+    VkPipelineDepthStencilStateCreateInfo depth_stencil{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+        .depthTestEnable = VK_TRUE,
+        .depthWriteEnable = VK_TRUE,
+        .depthCompareOp = VK_COMPARE_OP_LESS,
+        .depthBoundsTestEnable = VK_FALSE,
+        .stencilTestEnable = VK_FALSE
+    };
+
+    VkPipelineColorBlendAttachmentState color_blend_attachments{
+        .blendEnable = VK_FALSE,
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | 
+                          VK_COLOR_COMPONENT_G_BIT | 
+                          VK_COLOR_COMPONENT_B_BIT | 
+                          VK_COLOR_COMPONENT_A_BIT,
+    };
+
+    VkPipelineColorBlendStateCreateInfo color_blending{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        .logicOpEnable = VK_FALSE,
+        .attachmentCount = 1,
+        .pAttachments = &color_blend_attachments
+    };
+
+    VkDynamicState dynamic_state[] = { 
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR
+    };
+
+    VkPipelineDynamicStateCreateInfo dynamic_state_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = 2,
+        .pDynamicStates = dynamic_state
+    };
+
+    const auto set_layouts = std::to_array({ m_descriptor_set_layout });
+    VkPipelineLayoutCreateInfo pipeline_layout_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .setLayoutCount = (u32) set_layouts.size(),
+        .pSetLayouts = set_layouts.data()
+    };
+
+    vulkan_check_res(
+        vkCreatePipelineLayout(device(), &pipeline_layout_info, nullptr, &m_ground_pipeline_layout),
+        "failed to create pipeline layout"
+    );
+
+    const auto color_attachment_formats = std::to_array({ m_swapchain->surface_format().format });
+
+    VkPipelineRenderingCreateInfo pipeline_rendering_info{
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .colorAttachmentCount = color_attachment_formats.size(),
+        .pColorAttachmentFormats = color_attachment_formats.data(),
+        .depthAttachmentFormat = VK_FORMAT_D32_SFLOAT,
+    };
+
+    VkGraphicsPipelineCreateInfo pipeline_info{
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+        .pNext = &pipeline_rendering_info,
+        .stageCount = 2,
+        .pStages = shader_stages,
+        .pVertexInputState = &vertex_input_info,
+        .pInputAssemblyState = &input_assembly,
+        .pViewportState = &viewport_state,
+        .pRasterizationState = &rasterizer,
+        .pMultisampleState = &multisampling,
+        .pDepthStencilState = &depth_stencil,
+        .pColorBlendState = &color_blending,
+        .pDynamicState = &dynamic_state_info,
+        .layout = m_ground_pipeline_layout,
+        // We use dynamic rendering instead of a render pass.
+        .renderPass = VK_NULL_HANDLE,
+        .subpass = 0
+    };
+
+    vulkan_check_res(
+        vkCreateGraphicsPipelines(device(), VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &m_ground_pipeline),
+        "failed to create graphics pipeline"
+    );
+
+    vkDestroyShaderModule(device(), frag_shader_module, nullptr);
+    vkDestroyShaderModule(device(), vert_shader_module, nullptr);
+}
+
 
 void Engine::create_cube_texture_image() {
     auto image = stb::Image::from_bytes(get_asset<"images/soggy.png">(), 4);
@@ -1349,6 +1555,132 @@ void Engine::create_cubemap_sampler() {
     );
 }
 
+void Engine::create_ground_image() {
+    auto image = stb::Image::from_bytes(get_asset<"images/grid.png">(), 4);
+    if (!image)
+        throw std::runtime_error("failed to load grid.png");
+
+    VkDeviceSize image_size = image->width() * image->height() * 4;
+
+    // Create a staging buffer to upload our texture to.
+    vke::Buffer staging_buffer = vke::Buffer::create(
+        *m_device,
+        image_size, 
+        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+
+    // Upload the texture.
+    memcpy(staging_buffer.data(), image->data(), (usize) image_size);
+
+    // Create the texture image.
+    create_image_2d(
+        image->width(), 
+        image->height(), 
+        VK_FORMAT_R8G8B8A8_SRGB, 
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
+        m_ground_image, 
+        m_ground_image_memory 
+    );
+
+    VkCommandBuffer command_buffer = begin_single_time_commands();
+
+    transition_image_layout(
+        command_buffer, 
+        m_ground_image, 
+        0, 
+        VK_ACCESS_TRANSFER_WRITE_BIT, 
+        VK_IMAGE_LAYOUT_UNDEFINED, 
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
+        VK_PIPELINE_STAGE_TRANSFER_BIT
+    );
+
+    // Copy the staging buffer.
+    VkBufferImageCopy region{
+        .bufferOffset = 0,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .mipLevel = 0,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        },
+        .imageOffset = { .x = 0, .y = 0, .z = 0 },
+        .imageExtent = { .width = image->width(), .height = image->height(), .depth =  1 }
+    };
+    vkCmdCopyBufferToImage(
+        command_buffer,
+        staging_buffer.buffer(),
+        m_ground_image,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        1,
+        &region
+    );
+
+    // Prepare the texture for shader use.
+    transition_image_layout(
+        command_buffer, 
+        m_ground_image, 
+        VK_ACCESS_TRANSFER_WRITE_BIT, 
+        VK_ACCESS_SHADER_READ_BIT, 
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+    );
+
+    end_single_time_commands(command_buffer);
+}
+
+void Engine::create_ground_image_view() {
+    VkImageViewCreateInfo view_info{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = m_ground_image,
+        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .format = VK_FORMAT_R8G8B8A8_SRGB,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+    vulkan_check_res(
+        vkCreateImageView(device(), &view_info, nullptr, &m_ground_image_view),
+        "failed to create texture image view"
+    );
+}
+
+void Engine::create_ground_sampler() {
+    VkSamplerCreateInfo sampler_info{
+        .sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = VK_FILTER_NEAREST,
+        .minFilter = VK_FILTER_LINEAR,
+        .mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .mipLodBias = 0,
+        .anisotropyEnable = VK_TRUE,
+        .maxAnisotropy = m_device->physical_device_properties().limits.maxSamplerAnisotropy,
+        // TODO: what's this?
+        .compareEnable = VK_FALSE,
+        .compareOp = VK_COMPARE_OP_ALWAYS,
+        .minLod = 0,
+        .maxLod = 0,
+        .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = VK_FALSE,
+    };
+    vulkan_check_res(
+        vkCreateSampler(device(), &sampler_info, nullptr, &m_ground_sampler),
+        "failed to create texture sampler"
+    );
+}
+
 void Engine::create_camera_ubos() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
         m_camera_ubos[i] = vke::Buffer::create(
@@ -1421,6 +1753,12 @@ void Engine::create_descriptor_sets() {
             .imageView = m_cubemap_image_view,
             .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
         };
+
+        VkDescriptorImageInfo ground_image_info{
+            .sampler = m_ground_sampler,
+            .imageView = m_ground_image_view,
+            .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        };
         
         auto descriptor_writes = std::to_array<VkWriteDescriptorSet>({
             {
@@ -1449,43 +1787,47 @@ void Engine::create_descriptor_sets() {
                 .descriptorCount = 1,
                 .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                 .pImageInfo = &skybox_image_info
-            }
+            },
+            {
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .dstSet = m_descriptor_sets[i],
+                .dstBinding = 3,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &ground_image_info
+            },
         });
 
         vkUpdateDescriptorSets(device(), descriptor_writes.size(), descriptor_writes.data(), 0, nullptr);
     }
 }
 
-void Engine::create_vertex_buffer() {
-    usize size = sizeof(Vertex) * CUBE_VERTICES.size();
+void Engine::create_cube_buffers() {
+    usize vertex_size = sizeof(Vertex) * CUBE_VERTICES.size();
+    usize index_size = sizeof(u16) * CUBE_INDICES.size();
 
     m_cube_vertex_buffer = vke::Buffer::create(
         *m_device,
-        size,
+        vertex_size,
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
-    // Upload vertex data.
-    memcpy(m_cube_vertex_buffer.data(), CUBE_VERTICES.data(), size);
-}
-
-void Engine::create_index_buffer() {
-    usize size = sizeof(u16) * CUBE_INDICES.size();
-
     m_cube_index_buffer = vke::Buffer::create(
         *m_device,
-        size,
+        index_size,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
-    // Upload index data.
-    memcpy(m_cube_index_buffer.data(), CUBE_INDICES.data(), size);
+    memcpy(m_cube_index_buffer.data(), CUBE_INDICES.data(), index_size);
+    memcpy(m_cube_vertex_buffer.data(), CUBE_VERTICES.data(), vertex_size);
 }
 
 void Engine::create_cubemap_buffers() {
-    usize vertex_size = sizeof(Vertex) * CUBEMAP_VERTICES.size();
+    usize vertex_size = sizeof(CubemapVertex) * CUBEMAP_VERTICES.size();
+    usize index_size = sizeof(u16) * CUBEMAP_INDICES.size();
 
     m_cubemap_vertex_buffer = vke::Buffer::create(
         *m_device,
@@ -1494,12 +1836,6 @@ void Engine::create_cubemap_buffers() {
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
-    // Upload vertex data.
-    memcpy(m_cubemap_vertex_buffer.data(), CUBEMAP_VERTICES.data(), vertex_size);
-
-
-    usize index_size = sizeof(u16) * CUBEMAP_INDICES.size();
-
     m_cubemap_index_buffer = vke::Buffer::create(
         *m_device,
         index_size,
@@ -1507,23 +1843,45 @@ void Engine::create_cubemap_buffers() {
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     );
 
-    // Upload index data.
     memcpy(m_cubemap_index_buffer.data(), CUBEMAP_INDICES.data(), index_size);
+    memcpy(m_cubemap_vertex_buffer.data(), CUBEMAP_VERTICES.data(), vertex_size);
+}
+
+void Engine::create_ground_buffers() {
+    usize vertex_size = sizeof(Vertex) * GROUND_VERTICES.size();
+    usize index_size = sizeof(u16) * GROUND_INDICES.size();
+
+    m_ground_vertex_buffer = vke::Buffer::create(
+        *m_device,
+        vertex_size,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+
+    m_ground_index_buffer = vke::Buffer::create(
+        *m_device,
+        index_size,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+    );
+
+    memcpy(m_ground_vertex_buffer.data(), GROUND_VERTICES.data(), vertex_size);
+    memcpy(m_ground_index_buffer.data(), GROUND_INDICES.data(), index_size);
 }
 
 void Engine::create_scene_objects() {
     std::random_device rd;
     std::mt19937 mt{ rd() };
-    std::uniform_real_distribution<f32> pos_dist(-5, 5);
+    std::uniform_real_distribution<f32> pos_dist(0, 10);
     std::uniform_real_distribution<f32> rot_dist(0, 1);
 
     constexpr size_t NUM_CUBES = 60;
 
     for (usize i = 0; i < NUM_CUBES; i++) {
         glm::vec3 pos{
-            pos_dist(mt),
-            pos_dist(mt),
-            pos_dist(mt),
+            -5 + pos_dist(mt),
+             1 + pos_dist(mt),
+            -5 + pos_dist(mt),
         };
 
         // Generates a uniformly distributed quaternion. Not gonna pretend like I have the slightest idea as to how the hell this works
@@ -1822,6 +2180,7 @@ void Engine::update() {
     f32 forward = 0;
     f32 right = 0;
     f32 up = 0;
+    f32 speed = 5;
 
     const auto keyboard_state = SDL_GetKeyboardState(nullptr);
     
@@ -1837,6 +2196,8 @@ void Engine::update() {
         up += 1;
     if (keyboard_state[SDL_GetScancodeFromKey(SDLK_LCTRL, nullptr)])
         up -= 1;
+    if (keyboard_state[SDL_GetScancodeFromKey(SDLK_LSHIFT, nullptr)])
+        speed = 15;
 
     glm::vec3 dir_xz = m_camera.dir_xz();
 
@@ -1845,7 +2206,7 @@ void Engine::update() {
         up,
         dir_xz.z * forward + dir_xz.x * right
     };
-    move_dir *= time_delta * 5;
+    move_dir *= time_delta * speed;
 
     m_camera.set_pos(m_camera.pos() + move_dir);
     m_camera.update_rot();
@@ -2013,6 +2374,23 @@ void Engine::render_frame() {
         vkCmdBindIndexBuffer(command_buffer, m_cubemap_index_buffer.buffer(), 0, VK_INDEX_TYPE_UINT16);
         vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubemap_pipeline_layout, 0, 1, &m_descriptor_sets[m_current_frame], 0, nullptr);
         vkCmdDrawIndexed(command_buffer, (u32) CUBEMAP_INDICES.size(), 1, 0, 0, 0);
+    }
+
+    // Draw the ground.
+    {
+        VkBuffer vertex_bufs[] = { m_ground_vertex_buffer.buffer() };
+        VkDeviceSize offsets[] = { 0 };
+
+        vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ground_pipeline);
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_bufs, offsets);
+        vkCmdBindIndexBuffer(command_buffer, m_ground_index_buffer.buffer(), 0, VK_INDEX_TYPE_UINT16);
+
+        const auto descriptor_sets = std::to_array({ m_descriptor_sets[m_current_frame] });
+        vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_ground_pipeline_layout, 0, descriptor_sets.size(), descriptor_sets.data(), 0, nullptr);
+
+        vkCmdDrawIndexed(command_buffer, (u32) GROUND_INDICES.size(), 1, 0, 0, 0);
     }
 
     {

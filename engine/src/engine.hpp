@@ -36,8 +36,9 @@ private:
     void create_window_surface();
     void create_command_pools();
     void create_descriptor_set_layouts();
-    void create_graphics_pipeline();
+    void create_cube_pipeline();
     void create_cubemap_pipeline();
+    void create_ground_pipeline();
     void create_depth_image();
 
     void create_cube_texture_image();
@@ -48,14 +49,18 @@ private:
     void create_cubemap_image_view();
     void create_cubemap_sampler();
 
+    void create_ground_image();
+    void create_ground_image_view();
+    void create_ground_sampler();
+
     void create_camera_ubos();
 
     void create_descriptor_pool();
     void create_descriptor_sets();
 
-    void create_vertex_buffer();
-    void create_index_buffer();
+    void create_cube_buffers();
     void create_cubemap_buffers();
+    void create_ground_buffers();
     void create_scene_objects();
     void create_command_buffers();
     void create_sync_objects();
@@ -113,8 +118,13 @@ private:
     VkPipelineLayout m_cubemap_pipeline_layout;
     VkPipeline m_cubemap_pipeline;
 
+    VkPipelineLayout m_ground_pipeline_layout;
+    VkPipeline m_ground_pipeline;
+
     vke::Buffer m_cube_vertex_buffer;
     vke::Buffer m_cube_index_buffer;
+    vke::Buffer m_ground_vertex_buffer;
+    vke::Buffer m_ground_index_buffer;
     vke::Buffer m_cubemap_vertex_buffer;
     vke::Buffer m_cubemap_index_buffer;
 
@@ -133,6 +143,12 @@ private:
     VkDeviceMemory m_cubemap_memory;
     VkImageView m_cubemap_image_view;
     VkSampler m_cubemap_sampler;
+
+    // Ground image
+    VkImage m_ground_image;
+    VkDeviceMemory m_ground_image_memory;
+    VkImageView m_ground_image_view;
+    VkSampler m_ground_sampler;
     
     std::array<vke::Buffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
 

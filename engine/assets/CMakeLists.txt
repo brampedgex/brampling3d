@@ -62,6 +62,7 @@ endfunction()
 
 CompileSlangShaders("shaders/soggycube.slang")
 CompileSlangShaders("shaders/skybox.slang")
+CompileSlangShaders("shaders/ground.slang")
 EmbedFile("images/soggy.png")
 EmbedFile("images/skybox.png")
 EmbedFile("images/grid.png")
