@@ -1242,7 +1242,7 @@ void Engine::create_cube_texture_image() {
         image->height(), 
         m_texture_mip_levels,
         VK_FORMAT_R8G8B8A8_SRGB, 
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
         m_texture_image, 
         m_texture_image_memory
@@ -1285,25 +1285,16 @@ void Engine::create_cube_texture_image() {
         &region
     );
 
+    // Generate mips and prepare the texture for use in the fragment shader.
     generate_mips(
         command_buffer, 
         m_texture_image, 
         image->width(), 
         image->height(), 
-        m_texture_mip_levels
-    );
-
-    // Prepare the texture for shader use.
-    transition_image_layout(
-        command_buffer, 
-        m_texture_image, 
-        VK_ACCESS_TRANSFER_WRITE_BIT, 
-        VK_ACCESS_SHADER_READ_BIT, 
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
-        VK_PIPELINE_STAGE_TRANSFER_BIT, 
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        m_texture_mip_levels
+        m_texture_mip_levels,
+        VK_ACCESS_SHADER_READ_BIT,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
 
     end_single_time_commands(command_buffer);
@@ -1601,7 +1592,7 @@ void Engine::create_ground_image() {
         image->height(), 
         m_ground_mip_levels,
         VK_FORMAT_R8G8B8A8_SRGB, 
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
+        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
         m_ground_image, 
         m_ground_image_memory 
@@ -1644,17 +1635,16 @@ void Engine::create_ground_image() {
         &region
     );
 
-    // Prepare the texture for shader use.
-    transition_image_layout(
+    // Generate mips and prepare the texture for use in the fragment shader.
+    generate_mips(
         command_buffer, 
         m_ground_image, 
-        VK_ACCESS_TRANSFER_WRITE_BIT, 
-        VK_ACCESS_SHADER_READ_BIT, 
-        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
-        VK_PIPELINE_STAGE_TRANSFER_BIT, 
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        m_ground_mip_levels
+        image->width(), 
+        image->height(), 
+        m_ground_mip_levels,
+        VK_ACCESS_SHADER_READ_BIT,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
     );
 
     end_single_time_commands(command_buffer);
@@ -2131,17 +2121,17 @@ void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
     vkFreeCommandBuffers(device(), m_transient_command_pool, 1, &command_buffer);
 }
 
-void Engine::generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 width, u32 height, u32 mip_levels) {
+void Engine::generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 width, u32 height, u32 mip_levels, VkAccessFlags dst_access_mask, VkImageLayout dst_layout, VkPipelineStageFlags dst_stage_mask) {
     VkImageMemoryBarrier barrier{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-        .image = image,
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
         .subresourceRange = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .levelCount = 1,
             .baseArrayLayer = 0,
             .layerCount = 1,
-            .levelCount = 1,
         },
     };
 
@@ -2149,8 +2139,109 @@ void Engine::generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 wi
     u32 mip_height = height;
 
     for (u32 i = 1; i < mip_levels; i++) {
+        // Transition the previous mip level to be TRANSFER_SRC_OPTIMAL
+        barrier.subresourceRange.baseMipLevel = i - 1;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        vkCmdPipelineBarrier(
+            command_buffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 
+            0,
+            0, 
+            nullptr,
+            0, 
+            nullptr,
+            1, 
+            &barrier
+        );
 
+        // Blit to the next layer with linear interpolation.
+        VkImageBlit blit{
+            .srcSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel = i - 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .srcOffsets = {
+                { .x = 0, .y = 0, .z = 0 },
+                { 
+                    .x = (i32) mip_width, 
+                    .y = (i32) mip_height, 
+                    .z = 1
+                },
+            },
+            .dstSubresource = {
+                .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                .mipLevel = i,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+            .dstOffsets = {
+                { .x = 0, .y = 0, .z = 0 },
+                { 
+                    .x = (i32) (mip_width > 1 ? mip_width / 2 : 1), 
+                    .y = (i32) (mip_height > 1 ? mip_height / 2 : 1), 
+                    .z = 1 
+                },
+            },
+        };
+        vkCmdBlitImage(
+            command_buffer,
+            image, 
+            VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            image, 
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, 
+            &blit,
+            VK_FILTER_LINEAR
+        );
+
+        // Transition the layer for shader reading.
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+        barrier.newLayout = dst_layout;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dstAccessMask = dst_access_mask;
+        vkCmdPipelineBarrier(
+            command_buffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, 
+            dst_stage_mask, 
+            0,
+            0, 
+            nullptr,
+            0, 
+            nullptr,
+            1, 
+            &barrier
+        );
+
+        if (mip_width > 1)
+            mip_width /= 2;
+        if (mip_height > 1)
+            mip_height /= 2;
     }
+
+    // Transition the final image too.
+    barrier.subresourceRange.baseMipLevel = mip_levels - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = dst_layout;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = dst_access_mask;
+    vkCmdPipelineBarrier(
+        command_buffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 
+        dst_stage_mask, 
+        0,
+        0, 
+        nullptr,
+        0, 
+        nullptr,
+        1, 
+        &barrier
+    );
 }
 
 void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, u32 mip_levels, VkImageAspectFlags aspect_mask, u32 layer_count) {

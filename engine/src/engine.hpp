@@ -72,8 +72,22 @@ private:
     VkCommandBuffer begin_single_time_commands();
     void end_single_time_commands(VkCommandBuffer command_buffer);
 
-    void generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 width, u32 height, u32 mip_levels);
-    void transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, u32 mip_levels, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT, u32 layer_count = 1);
+    // Generates mips and transitions them to the given layout. Assumes the image is in TRANSFER_DST_OPTIMAL layout.
+    void generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 width, u32 height, u32 mip_levels, VkAccessFlags dst_access_mask, VkImageLayout dst_layout, VkPipelineStageFlags dst_stage_mask);
+
+    void transition_image_layout(
+        VkCommandBuffer command_buffer, 
+        VkImage image, 
+        VkAccessFlags src_access_mask, 
+        VkAccessFlags dst_access_mask, 
+        VkImageLayout src_layout, 
+        VkImageLayout dst_layout, 
+        VkPipelineStageFlags src_stage_mask, 
+        VkPipelineStageFlags dst_stage_mask, 
+        u32 mip_levels, 
+        VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT, 
+        u32 layer_count = 1
+    );
 
     void recreate_swapchain();   
 
