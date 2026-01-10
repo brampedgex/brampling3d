@@ -7,6 +7,7 @@
 
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 struct Vertex {
     glm::vec3 pos;
@@ -1015,6 +1016,7 @@ void Engine::create_depth_image() {
     create_image_2d(
         width,
         height,
+        1,
         depth_format,
         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -1219,6 +1221,8 @@ void Engine::create_cube_texture_image() {
     if (!image)
         throw std::runtime_error("failed to load soggy.png");
 
+    m_texture_mip_levels = 32 - std::countl_zero((u32) std::max(image->width(), image->height()) | 1);
+
     VkDeviceSize image_size = image->width() * image->height() * 4;
 
     // Create a staging buffer to upload our texture to.
@@ -1236,6 +1240,7 @@ void Engine::create_cube_texture_image() {
     create_image_2d(
         image->width(), 
         image->height(), 
+        m_texture_mip_levels,
         VK_FORMAT_R8G8B8A8_SRGB, 
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
@@ -1253,7 +1258,8 @@ void Engine::create_cube_texture_image() {
         VK_IMAGE_LAYOUT_UNDEFINED, 
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
-        VK_PIPELINE_STAGE_TRANSFER_BIT
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        m_texture_mip_levels
     );
 
     // Copy the staging buffer.
@@ -1279,6 +1285,14 @@ void Engine::create_cube_texture_image() {
         &region
     );
 
+    generate_mips(
+        command_buffer, 
+        m_texture_image, 
+        image->width(), 
+        image->height(), 
+        m_texture_mip_levels
+    );
+
     // Prepare the texture for shader use.
     transition_image_layout(
         command_buffer, 
@@ -1288,7 +1302,8 @@ void Engine::create_cube_texture_image() {
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
         VK_PIPELINE_STAGE_TRANSFER_BIT, 
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        m_texture_mip_levels
     );
 
     end_single_time_commands(command_buffer);
@@ -1305,7 +1320,7 @@ void Engine::create_cube_texture_image_view() {
         .subresourceRange = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
-            .levelCount = 1,
+            .levelCount = m_texture_mip_levels,
             .baseArrayLayer = 0,
             .layerCount = 1,
         }
@@ -1332,7 +1347,7 @@ void Engine::create_cube_texture_sampler() {
         .compareEnable = VK_FALSE,
         .compareOp = VK_COMPARE_OP_ALWAYS,
         .minLod = 0,
-        .maxLod = 0,
+        .maxLod = (f32) m_texture_mip_levels, // TODO is that how you're supposed to do it?
         .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
         .unnormalizedCoordinates = VK_FALSE,
     };
@@ -1465,6 +1480,7 @@ void Engine::create_cubemap_image() {
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
+        1,
         VK_IMAGE_ASPECT_COLOR_BIT,
         6
     );
@@ -1504,6 +1520,7 @@ void Engine::create_cubemap_image() {
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        1,
         VK_IMAGE_ASPECT_COLOR_BIT,
         6
     );
@@ -1560,6 +1577,11 @@ void Engine::create_ground_image() {
     if (!image)
         throw std::runtime_error("failed to load grid.png");
 
+    // The number of mip levels we need is the floor of the log2 of the max dimension, 
+    // which is just the most significant bit
+    m_ground_mip_levels = 32 - std::countl_zero((u32) std::max(image->width(), image->height()) | 1);
+    spdlog::info("Ground image would have {} mip levels", m_ground_mip_levels);
+
     VkDeviceSize image_size = image->width() * image->height() * 4;
 
     // Create a staging buffer to upload our texture to.
@@ -1577,6 +1599,7 @@ void Engine::create_ground_image() {
     create_image_2d(
         image->width(), 
         image->height(), 
+        m_ground_mip_levels,
         VK_FORMAT_R8G8B8A8_SRGB, 
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 
@@ -1594,7 +1617,8 @@ void Engine::create_ground_image() {
         VK_IMAGE_LAYOUT_UNDEFINED, 
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 
-        VK_PIPELINE_STAGE_TRANSFER_BIT
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        m_ground_mip_levels 
     );
 
     // Copy the staging buffer.
@@ -1629,7 +1653,8 @@ void Engine::create_ground_image() {
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 
         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 
         VK_PIPELINE_STAGE_TRANSFER_BIT, 
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        m_ground_mip_levels
     );
 
     end_single_time_commands(command_buffer);
@@ -1644,7 +1669,7 @@ void Engine::create_ground_image_view() {
         .subresourceRange = {
             .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
-            .levelCount = 1,
+            .levelCount = m_ground_mip_levels,
             .baseArrayLayer = 0,
             .layerCount = 1,
         }
@@ -1671,7 +1696,7 @@ void Engine::create_ground_sampler() {
         .compareEnable = VK_FALSE,
         .compareOp = VK_COMPARE_OP_ALWAYS,
         .minLod = 0,
-        .maxLod = 0,
+        .maxLod = (f32) m_ground_mip_levels,
         .borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
         .unnormalizedCoordinates = VK_FALSE,
     };
@@ -1987,14 +2012,14 @@ void Engine::create_sync_objects() {
     }
 }
 
-void Engine::create_image_2d(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem) {
+void Engine::create_image_2d(u32 width, u32 height, u32 mip_levels, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem) {
     VkImageCreateInfo image_info{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .flags = 0,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = format,
         .extent = { .width = width, .height = height, .depth = 1 },
-        .mipLevels = 1,
+        .mipLevels = mip_levels,
         .arrayLayers = 1,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
@@ -2106,7 +2131,29 @@ void Engine::end_single_time_commands(VkCommandBuffer command_buffer) {
     vkFreeCommandBuffers(device(), m_transient_command_pool, 1, &command_buffer);
 }
 
-void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask, u32 layer_count) {
+void Engine::generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 width, u32 height, u32 mip_levels) {
+    VkImageMemoryBarrier barrier{
+        .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .image = image,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .subresourceRange = {
+            .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+            .levelCount = 1,
+        },
+    };
+
+    u32 mip_width = width;
+    u32 mip_height = height;
+
+    for (u32 i = 1; i < mip_levels; i++) {
+
+    }
+}
+
+void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, u32 mip_levels, VkImageAspectFlags aspect_mask, u32 layer_count) {
     // TODO: Use vkCmdPipelineBarrier2 provided by Vulkan 1.3
     VkImageMemoryBarrier memory_barrier_1{
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -2118,7 +2165,7 @@ void Engine::transition_image_layout(VkCommandBuffer command_buffer, VkImage ima
         .subresourceRange = {
             .aspectMask = aspect_mask,
             .baseMipLevel = 0,
-            .levelCount = 1,
+            .levelCount = mip_levels,
             .baseArrayLayer = 0,
             .layerCount = layer_count,
         }
@@ -2298,7 +2345,8 @@ void Engine::render_frame() {
         VK_IMAGE_LAYOUT_UNDEFINED,
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        1
     );
 
     transition_image_layout(
@@ -2310,6 +2358,7 @@ void Engine::render_frame() {
         VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        1,
         VK_IMAGE_ASPECT_DEPTH_BIT
     );
     
@@ -2427,7 +2476,8 @@ void Engine::render_frame() {
         VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
         VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        1
     );
         
     vulkan_check_res(

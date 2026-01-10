@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <numbers>
 #include <random>
 #include <ranges>

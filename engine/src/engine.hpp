@@ -66,13 +66,14 @@ private:
     void create_sync_objects();
 
 
-    void create_image_2d(u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
+    void create_image_2d(u32 width, u32 height, u32 mip_levels, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
     void create_image_cube(u32 size, VkFormat format, VkImageUsageFlags usage, VkMemoryPropertyFlags mem_flags, VkImage& image, VkDeviceMemory& mem);
 
     VkCommandBuffer begin_single_time_commands();
     void end_single_time_commands(VkCommandBuffer command_buffer);
 
-    void transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT, u32 layer_count = 1);
+    void generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 width, u32 height, u32 mip_levels);
+    void transition_image_layout(VkCommandBuffer command_buffer, VkImage image, VkAccessFlags src_access_mask, VkAccessFlags dst_access_mask, VkImageLayout src_layout, VkImageLayout dst_layout, VkPipelineStageFlags src_stage_mask, VkPipelineStageFlags dst_stage_mask, u32 mip_levels, VkImageAspectFlags aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT, u32 layer_count = 1);
 
     void recreate_swapchain();   
 
@@ -137,6 +138,7 @@ private:
     VkDeviceMemory m_texture_image_memory;
     VkImageView m_texture_image_view;
     VkSampler m_texture_sampler;
+    u32 m_texture_mip_levels;
 
     // Cubemap image
     VkImage m_cubemap_image;
@@ -149,6 +151,7 @@ private:
     VkDeviceMemory m_ground_image_memory;
     VkImageView m_ground_image_view;
     VkSampler m_ground_sampler;
+    u32 m_ground_mip_levels;
     
     std::array<vke::Buffer, MAX_FRAMES_IN_FLIGHT> m_camera_ubos;
 
