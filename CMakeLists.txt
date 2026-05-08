@@ -33,8 +33,9 @@ set(SPDLOG_FMT_EXTERNAL ON)
 CPMAddPackage("gh:fmtlib/fmt#12.1.0")
 CPMAddPackage("gh:gabime/spdlog@1.16.0")
 CPMAddPackage("gh:g-truc/glm#1.0.2")
-CPMAddPackage("gh:libsdl-org/SDL#release-3.2.28")
+CPMAddPackage("gh:libsdl-org/SDL#release-3.4.8")
 CPMAddPackage("gh:BasedInc/libhat@0.9.0")
+CPMAddPackage("gh:p-ranav/argparse@3.2")
 
 CPMAddPackage(
     NAME stb

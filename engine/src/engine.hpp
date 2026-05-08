@@ -1,6 +1,7 @@
 #pragma once
 
 #include "camera.hpp"
+#include "cli.hpp"
 
 #include "util/vulkan.hpp"
 #include "util/sdl3.hpp"
@@ -14,6 +15,8 @@ static constexpr auto ENGINE_VULKAN_API_VERSION = VK_API_VERSION_1_3;
 
 class Engine {
 public:
+    explicit Engine(CliConfig config) : m_config(config) {}
+
     /// Initialize SDL and Vulkan
     void start();
 
@@ -72,7 +75,8 @@ private:
     VkCommandBuffer begin_single_time_commands();
     void end_single_time_commands(VkCommandBuffer command_buffer);
 
-    // Generates mips and transitions them to the given layout. Assumes the image is in TRANSFER_DST_OPTIMAL layout.
+    // Generates mips and transitions them to the given layout. 
+    // The entire image including uninitialized mip levels must be in TRANSFER_DST_OPTIMAL layout.
     void generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 width, u32 height, u32 mip_levels, VkAccessFlags dst_access_mask, VkImageLayout dst_layout, VkPipelineStageFlags dst_stage_mask);
 
     void transition_image_layout(
@@ -113,6 +117,8 @@ private:
         std::array<vke::Buffer, MAX_FRAMES_IN_FLIGHT> m_ubos;
         std::array<VkDescriptorSet, MAX_FRAMES_IN_FLIGHT> m_descriptor_sets;
     };
+
+    CliConfig m_config;
 
     SDL_Window* m_window{};
     u32 m_window_width;

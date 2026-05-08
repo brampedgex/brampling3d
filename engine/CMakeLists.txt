@@ -23,11 +23,18 @@ target_link_libraries(${PROJECT_NAME}
     imgui::imgui
     stb::stb
     libhat::libhat
+    argparse::argparse
 )
 
 if (APPLE)
     target_link_libraries(${PROJECT_NAME}
         Vulkan::MoltenVK
+        "-framework QuartzCore"
+        "-framework Metal"
+        "-framework Foundation"
+        "-framework AppKit"
+        "-framework IOKit"
+        "-framework IOSurface"
     )
 endif()
 

@@ -257,10 +257,13 @@ void Engine::init_window() {
     constexpr u32 DEFAULT_WIDTH = 960;
     constexpr u32 DEFAULT_HEIGHT = 640;
 
+    u32 init_width = m_config.m_width.value_or(DEFAULT_WIDTH);
+    u32 init_height = m_config.m_height.value_or(DEFAULT_HEIGHT);
+
     // Hide the window until we are done initializing GPU resources.
     // Maybe in the future we want to show some kind of splash screen when the loading process takes longer,
     // but for now this is fine.
-    if ((m_window = SDL_CreateWindow("brampling3D", DEFAULT_WIDTH, DEFAULT_HEIGHT, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
+    if ((m_window = SDL_CreateWindow("brampling3D", init_width, init_height, SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN)) == nullptr) {
         sdl3_perror("Failed to create window");
         throw std::runtime_error("Window initialization failed");
     }
@@ -487,16 +490,17 @@ void Engine::create_instance() {
     vkEnumerateInstanceExtensionProperties(nullptr, &supported_extension_count, supported_extensions.data());
 
     // Try to enable VK_KHR_portability_enumeration for MoltenVK support.
-    constexpr auto DESIRED_EXTENSIONS = std::to_array({ VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME });
-
-    for (auto desired_extension : DESIRED_EXTENSIONS) {
-        for (const auto& extension : supported_extensions) {
-            if (extension.extensionName == std::string_view{desired_extension}) {
-                enable_extensions.push_back(desired_extension);
-                break;
-            }
-        }
-    }
+    // Apparently we shouldn't do this if we use MoltenVK directly? It suddenly stopped working after updating the SDK. Weird.
+    // constexpr auto DESIRED_EXTENSIONS = std::to_array({ VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME });
+    //
+    // for (auto desired_extension : DESIRED_EXTENSIONS) {
+    //     for (const auto& extension : supported_extensions) {
+    //         if (extension.extensionName == std::string_view{desired_extension}) {
+    //             enable_extensions.push_back(desired_extension);
+    //             break;
+    //         }
+    //     }
+    // }
 
     u32 layer_count;
     vkEnumerateInstanceLayerProperties(&layer_count, nullptr);
@@ -1571,7 +1575,6 @@ void Engine::create_ground_image() {
     // The number of mip levels we need is the floor of the log2 of the max dimension, 
     // which is just the most significant bit
     m_ground_mip_levels = 32 - std::countl_zero((u32) std::max(image->width(), image->height()) | 1);
-    spdlog::info("Ground image would have {} mip levels", m_ground_mip_levels);
 
     VkDeviceSize image_size = image->width() * image->height() * 4;
 
@@ -2200,7 +2203,7 @@ void Engine::generate_mips(VkCommandBuffer command_buffer, VkImage image, u32 wi
             VK_FILTER_LINEAR
         );
 
-        // Transition the layer for shader reading.
+        // Transition the layer to the desired layout.
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
         barrier.newLayout = dst_layout;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
@@ -2633,12 +2636,16 @@ void Engine::render_imgui(VkCommandBuffer command_buffer) {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
+    ImGui::SetNextWindowPos({ 0.f, 0.f });
+    ImGui::Begin("FPS", nullptr, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground);
+    auto& io = ImGui::GetIO();
+    imgui_text("FPS: {:.1f} ({:.3f} ms)", io.Framerate, 1000.0 / io.Framerate);
+    ImGui::End();
+
     ImGui::Begin("Debug");
 
     imgui_text("brampling3D ({} {}, {})", SDL_GetPlatform(), ENGINE_SYSTEM_PROCESSOR, SDL_GetCurrentVideoDriver());
     imgui_text("GPU: {}", m_device->device_name());
-    auto& io = ImGui::GetIO();
-    imgui_text("Frame time: {:.3f} ms ({:.1f} FPS)", 1000.0 / io.Framerate, io.Framerate);
 
     ImGui::Separator();
 
